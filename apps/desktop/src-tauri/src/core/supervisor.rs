@@ -103,7 +103,7 @@ pub fn connect(
     )?;
     xray::write_config(&config, &paths.xray_config)?;
 
-    disconnect(lock, paths);
+    disconnect(lock);
 
     let log = File::create(&paths.xray_log).context("create xray log")?;
     let stdout = log.try_clone().context("clone xray log handle")?;
@@ -157,7 +157,7 @@ pub fn connect(
         }
 
         if Instant::now() >= deadline {
-            disconnect(lock, paths);
+            disconnect(lock);
             let tail = log_tail(&paths.xray_log, 25);
             bail!("Xray не открыл порт {socks_port} за 6 секунд.\n{tail}");
         }
@@ -168,7 +168,7 @@ pub fn connect(
     Ok(status(lock, &paths.xray_log))
 }
 
-pub fn disconnect(lock: &Mutex<CoreState>, _paths: &AppPaths) -> ConnectionStatus {
+pub fn disconnect(lock: &Mutex<CoreState>) -> ConnectionStatus {
     let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     if let Some(mut child) = guard.process.take() {
@@ -310,7 +310,7 @@ mod tests {
         );
         assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
 
-        let status = disconnect(&state, &paths);
+        let status = disconnect(&state);
         assert!(!status.running);
         let _ = std::fs::remove_dir_all(&root);
     }

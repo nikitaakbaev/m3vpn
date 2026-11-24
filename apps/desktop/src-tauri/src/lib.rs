@@ -2,6 +2,7 @@ mod commands;
 mod core;
 mod logging;
 mod paths;
+mod ping;
 mod port;
 mod sidecars;
 mod store;
@@ -146,6 +147,8 @@ pub fn run() {
             commands::list_profiles,
             commands::list_servers,
             commands::delete_profile,
+            commands::refresh_profile,
+            commands::probe_servers,
             commands::connect_server,
             commands::disconnect_core,
             commands::connection_status,
@@ -193,6 +196,15 @@ pub fn cli_import(url: &str, name: Option<String>) -> anyhow::Result<subscriptio
     subscription::import(&Mutex::new(conn), url, name)
 }
 
+pub fn cli_probe() -> anyhow::Result<(usize, usize)> {
+    let paths = AppPaths::new()?;
+    paths.ensure()?;
+    let conn = store::open(&paths.db_path)?;
+    let results = ping::probe_all(&Mutex::new(conn), 3000, 8)?;
+    let ok = results.iter().filter(|result| result.ok).count();
+    Ok((ok, results.len()))
+}
+
 pub fn show_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -203,5 +215,5 @@ pub fn show_main(app: &tauri::AppHandle) {
 
 pub fn shutdown_core(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
-    core::disconnect(&state.core, &state.paths);
+    core::disconnect(&state.core);
 }

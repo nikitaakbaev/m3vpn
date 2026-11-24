@@ -25,10 +25,16 @@ export default function App() {
   const status = useAppStore((state) => state.status);
   const servers = useAppStore((state) => state.servers);
   const connect = useAppStore((state) => state.connect);
+  const probeAll = useAppStore((state) => state.probeAll);
   const pollStatus = useAppStore((state) => state.pollStatus);
   const t = useT();
   const [page, setPageState] = useState<Page>(pageFromHash);
   const autoTried = useRef(false);
+  const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
+  const seed = settings["ui.seed_color"] ?? "#22C55E";
+  const pingEnabled = settings["ping.enabled"] ?? "true";
+  const pingInterval = settings["ping.interval_sec"] ?? "60";
+  const autoconnect = settings["startup.autoconnect"] === "true";
 
   const setPage = (next: Page) => {
     setPageState(next);
@@ -53,15 +59,23 @@ export default function App() {
   }, [loaded, pollStatus]);
 
   useEffect(() => {
+    if (!loaded || pingEnabled !== "true") return;
+    const seconds = Math.max(5, Number(pingInterval) || 60);
+    const first = window.setTimeout(() => void probeAll(false, true), 1500);
+    const timer = window.setInterval(() => void probeAll(false, true), seconds * 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [loaded, pingEnabled, pingInterval, probeAll]);
+
+  useEffect(() => {
     if (!loaded || autoTried.current) return;
-    if (settings["startup.autoconnect"] !== "true") return;
+    if (!autoconnect) return;
     if (status.running || servers.length === 0) return;
     autoTried.current = true;
     void connect();
-  }, [loaded, settings, status.running, servers.length, connect]);
-
-  const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
-  const seed = settings["ui.seed_color"] ?? "#22C55E";
+  }, [loaded, autoconnect, status.running, servers.length, connect]);
 
   useEffect(() => {
     applyTheme(seed, theme);

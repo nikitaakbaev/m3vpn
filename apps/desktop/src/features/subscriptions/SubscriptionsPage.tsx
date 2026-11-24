@@ -14,6 +14,8 @@ export function SubscriptionsPage() {
   const importing = useAppStore((state) => state.importing);
   const importSubscription = useAppStore((state) => state.importSubscription);
   const deleteProfile = useAppStore((state) => state.deleteProfile);
+  const refreshProfile = useAppStore((state) => state.refreshProfile);
+  const refreshingId = useAppStore((state) => state.refreshingId);
   const notify = useAppStore((state) => state.notify);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [url, setUrl] = useState("");
@@ -67,7 +69,7 @@ export function SubscriptionsPage() {
       <PageHeader
         title={t("subs.title")}
         subtitle={t("subs.subtitle")}
-        badge={<span className="pill pill--accent">M2</span>}
+        badge={<span className="pill pill--accent">M3</span>}
         actions={
           <Button icon="add_link" onClick={openDialog}>
             {t("subs.add")}
@@ -128,18 +130,33 @@ export function SubscriptionsPage() {
                       </span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="icon-button icon-button--danger"
-                    aria-label={t("subs.delete")}
-                    onClick={() => {
-                      if (window.confirm(`${t("subs.delete")}: ${profile.name}?`)) {
-                        void deleteProfile(profile.id);
-                      }
-                    }}
-                  >
-                    <Icon name="delete" size={19} />
-                  </button>
+                  <div className="profile-card__actions">
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={t("subs.refresh")}
+                      title={t("subs.refresh")}
+                      disabled={refreshingId === profile.id}
+                      onClick={() => void refreshProfile(profile.id)}
+                    >
+                      <Icon
+                        name={refreshingId === profile.id ? "progress_activity" : "refresh"}
+                        size={19}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button icon-button--danger"
+                      aria-label={t("subs.delete")}
+                      onClick={() => {
+                        if (window.confirm(`${t("subs.delete")}: ${profile.name}?`)) {
+                          void deleteProfile(profile.id);
+                        }
+                      }}
+                    >
+                      <Icon name="delete" size={19} />
+                    </button>
+                  </div>
                 </div>
 
                 {profile.userinfo ? (
@@ -192,14 +209,25 @@ export function SubscriptionsPage() {
         </div>
       </Card>
 
-      <dialog ref={dialogRef} className="m3-dialog m3-dialog--form" onCancel={closeDialog}>
+      <dialog
+        ref={dialogRef}
+        className="m3-dialog m3-dialog--form"
+        aria-labelledby="subs-add-title"
+        onCancel={(event) => {
+          if (importing) {
+            event.preventDefault();
+            return;
+          }
+          closeDialog();
+        }}
+      >
         <form onSubmit={submit}>
           <div className="m3-dialog__head">
             <span className="m3-dialog__icon m3-dialog__icon--accent">
               <Icon name="add_link" size={22} />
             </span>
             <div>
-              <h2>{t("subs.addTitle")}</h2>
+              <h2 id="subs-add-title">{t("subs.addTitle")}</h2>
               <p>{t("subs.addHint")}</p>
             </div>
           </div>

@@ -42,7 +42,7 @@ export function SettingsPage() {
       <PageHeader
         title={t("settings.title")}
         subtitle={t("settings.subtitle")}
-        badge={<span className="pill pill--accent">M2</span>}
+        badge={<span className="pill pill--accent">M3</span>}
       />
 
       <div className="settings-grid">
@@ -100,6 +100,7 @@ export function SettingsPage() {
             </div>
             <select
               className="m3-select"
+              aria-label={t("settings.language")}
               value={language}
               onChange={(event) => void set("ui.language", event.target.value)}
             >
@@ -124,11 +125,12 @@ export function SettingsPage() {
               label={t("settings.mode")}
               options={[
                 { value: "proxy", label: t("home.proxy"), icon: "public" },
-                { value: "tun", label: t("home.tun"), icon: "shield" },
+                { value: "tun", label: t("home.tun"), icon: "shield", disabled: true },
               ]}
               onChange={(value) => void set("mode", value)}
             />
           </div>
+          <p className="hint">{t("settings.tunHint")}</p>
 
           <div className="settings-row">
             <div className="settings-row__text">
@@ -138,6 +140,7 @@ export function SettingsPage() {
             <input
               className="m3-input m3-input--short"
               type="number"
+              aria-label={t("settings.proxyPort")}
               min={1024}
               max={65535}
               value={settings["proxy.port"] ?? "10808"}
@@ -200,6 +203,7 @@ export function SettingsPage() {
             <input
               className="m3-input m3-input--short"
               type="number"
+              aria-label={t("settings.interval")}
               min={5}
               max={1800}
               value={settings["ping.interval_sec"] ?? "60"}
@@ -227,6 +231,7 @@ export function SettingsPage() {
             <input
               className="m3-input m3-input--short"
               type="number"
+              aria-label={t("settings.concurrency")}
               min={1}
               max={32}
               value={settings["ping.concurrency"] ?? "4"}
@@ -248,6 +253,8 @@ export function SettingsPage() {
               onChange={(value) => void set("select.mode", value)}
             />
           </div>
+          <p className="hint">{t("settings.selectHint")}</p>
+          <p className="hint">{t("settings.pingHint")}</p>
         </Card>
 
         <Card className="settings-card">

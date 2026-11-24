@@ -47,6 +47,13 @@ export interface ConnectionStatus {
   error: string | null;
 }
 
+export interface LatencyResult {
+  serverId: string;
+  latencyMs: number | null;
+  ok: boolean;
+  error: string | null;
+}
+
 export interface ImportSummary {
   profileId: string;
   name: string;
@@ -64,6 +71,8 @@ export interface CoreInfo {
   error: string | null;
 }
 
+// Browser mock only. Tauri always loads the persisted values from SQLite
+// (store.rs is the source of truth for the real defaults).
 export const DEFAULT_SETTINGS: Settings = {
   mode: "proxy",
   "ping.enabled": "true",
@@ -135,7 +144,7 @@ let mockServers: Server[] = [
   host: host as string,
   port: port as number,
   enabled: true,
-  latencyMs: null,
+  latencyMs: [38, 52, 63, 71, 88, 120][index] ?? null,
 }));
 
 let mockStatus: ConnectionStatus = {
@@ -224,6 +233,35 @@ export async function listServers(profileId?: string): Promise<Server[]> {
     return profileId ? mockServers.filter((server) => server.profileId === profileId) : [...mockServers];
   }
   return invoke<Server[]>("list_servers", { profileId: profileId ?? null });
+}
+
+export async function refreshProfile(profileId: string): Promise<ImportSummary> {
+  if (!isTauri) {
+    const profile = mockProfiles.find((item) => item.id === profileId);
+    if (!profile) throw new Error("подписка не найдена");
+    profile.lastRefreshAt = Math.floor(Date.now() / 1000);
+    return {
+      profileId,
+      name: profile.name,
+      title: profile.title,
+      servers: mockServers.filter((server) => server.profileId === profileId).length,
+      skipped: 0,
+      notes: [],
+    };
+  }
+  return invoke<ImportSummary>("refresh_profile", { profileId });
+}
+
+export async function probeServers(timeoutMs = 3000, concurrency = 8): Promise<LatencyResult[]> {
+  if (!isTauri) {
+    const results: LatencyResult[] = mockServers.map((server, index) => {
+      const latency = 32 + index * 19 + Math.round(Math.random() * 12);
+      server.latencyMs = latency;
+      return { serverId: server.id, latencyMs: latency, ok: true, error: null };
+    });
+    return results;
+  }
+  return invoke<LatencyResult[]>("probe_servers", { timeoutMs, concurrency });
 }
 
 export async function deleteProfile(profileId: string): Promise<void> {

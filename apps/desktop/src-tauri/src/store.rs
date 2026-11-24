@@ -6,6 +6,7 @@ use std::path::Path;
 
 pub type Db = Connection;
 
+// Keep in sync with the browser mock in apps/desktop/src/lib/tauri.ts.
 const DEFAULTS: &[(&str, &str)] = &[
     ("mode", "proxy"),
     ("ping.enabled", "true"),
@@ -376,6 +377,38 @@ pub fn server_config(conn: &Connection, server_id: &str) -> Result<Option<(Strin
         .query_row(
             "SELECT name, full_config_json FROM servers WHERE id = ?1",
             [server_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?)
+}
+
+pub fn update_latency(
+    conn: &Connection,
+    server_id: &str,
+    latency_ms: Option<u64>,
+    ok: bool,
+    at: i64,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE servers SET latency_ms = ?1, latency_ok = ?2, latency_at = ?3 WHERE id = ?4",
+        params![
+            latency_ms.map(|value| value as i64),
+            ok as i64,
+            at,
+            server_id
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn profile_source(
+    conn: &Connection,
+    profile_id: &str,
+) -> Result<Option<(String, Option<String>)>> {
+    Ok(conn
+        .query_row(
+            "SELECT name, url FROM profiles WHERE id = ?1",
+            [profile_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?)

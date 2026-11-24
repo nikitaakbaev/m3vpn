@@ -117,11 +117,12 @@ fn ensure_outbounds(root: &mut Map<String, Value>) {
         *outbounds = json!([]);
     }
     let outbounds = outbounds.as_array_mut().expect("outbounds array");
-    let has_direct = outbounds.iter().any(|outbound| {
-        outbound.get("tag").and_then(Value::as_str) == Some("direct")
-            || outbound.get("protocol").and_then(Value::as_str) == Some("freedom")
-    });
-    if !has_direct {
+    let has_direct_tag = outbounds
+        .iter()
+        .any(|outbound| outbound.get("tag").and_then(Value::as_str) == Some("direct"));
+    if !has_direct_tag {
+        // patch_routing points DNS probes at the "direct" tag, so the tag must
+        // exist even when a differently-named freedom outbound is present.
         outbounds.push(json!({ "tag": "direct", "protocol": "freedom" }));
     }
 }

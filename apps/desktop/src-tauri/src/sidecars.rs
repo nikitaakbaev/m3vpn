@@ -47,8 +47,10 @@ impl Sidecars {
         if !xray.exists() {
             bail!("xray binary is missing at {}", xray.display());
         }
-        if !self.assets_dir().join("geoip.dat").exists() {
-            bail!("geoip.dat is missing in {}", self.assets_dir().display());
+        for asset in ["geoip.dat", "geosite.dat"] {
+            if !self.assets_dir().join(asset).exists() {
+                bail!("{asset} is missing in {}", self.assets_dir().display());
+            }
         }
         Ok(())
     }

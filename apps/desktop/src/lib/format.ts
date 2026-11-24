@@ -35,7 +35,7 @@ export function formatBytes(bytes?: number): string {
 
 export function formatDate(unix?: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleDateString("ru-RU", {
+  return new Date(unix * 1000).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -47,7 +47,7 @@ export function formatUptime(startedAt?: number | null): string {
   const seconds = Math.max(0, Math.floor(Date.now() / 1000) - startedAt);
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours} ч ${minutes} мин`;
-  if (minutes > 0) return `${minutes} мин`;
-  return `${seconds} с`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
 }

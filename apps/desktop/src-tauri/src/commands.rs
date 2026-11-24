@@ -1,4 +1,5 @@
 use crate::core::{self, ConnectionStatus};
+use crate::ping::{self, LatencyResult};
 use crate::port;
 use crate::store::{ProfileRow, ServerRow};
 use crate::subscription::{self, ImportSummary};
@@ -143,6 +144,27 @@ pub fn list_servers(
 }
 
 #[tauri::command]
+pub fn refresh_profile(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<ImportSummary, String> {
+    let (name, url) = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
+        crate::store::profile_source(&db, &profile_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "подписка не найдена".to_string())?
+    };
+    let url = url
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "URL подписки не сохранён — добавьте её заново".to_string())?;
+    subscription::import_into(&state.db, &url, Some(name), Some(profile_id))
+        .map_err(|error| format!("{error:#}"))
+}
+
+#[tauri::command]
 pub fn delete_profile(state: State<'_, AppState>, profile_id: String) -> Result<(), String> {
     let db = state
         .db
@@ -189,8 +211,19 @@ pub fn connect_server(
 }
 
 #[tauri::command]
+pub fn probe_servers(
+    state: State<'_, AppState>,
+    timeout_ms: Option<u64>,
+    concurrency: Option<u32>,
+) -> Result<Vec<LatencyResult>, String> {
+    let timeout = timeout_ms.unwrap_or(3000);
+    let concurrency = concurrency.unwrap_or(8) as usize;
+    ping::probe_all(&state.db, timeout, concurrency).map_err(|error| format!("{error:#}"))
+}
+
+#[tauri::command]
 pub fn disconnect_core(state: State<'_, AppState>) -> ConnectionStatus {
-    core::disconnect(&state.core, &state.paths)
+    core::disconnect(&state.core)
 }
 
 #[tauri::command]
@@ -210,11 +243,12 @@ pub fn core_info(state: State<'_, AppState>) -> CoreInfo {
         };
     };
 
+    let check = sidecars.check();
     CoreInfo {
-        available: sidecars.check().is_ok(),
+        available: check.is_ok(),
         xray_path: Some(sidecars.xray().display().to_string()),
         xray_version: sidecars.version().ok(),
         assets_dir: Some(sidecars.assets_dir().display().to_string()),
-        error: sidecars.check().err().map(|error| error.to_string()),
+        error: check.err().map(|error| error.to_string()),
     }
 }

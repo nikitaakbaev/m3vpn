@@ -10,6 +10,8 @@
   См. [`docs/m1-report.md`](docs/m1-report.md).
 - **M2 — готово.** Импорт полных Xray-конфигов, реальный запуск Xray, подключение,
   новый dark Material 3 дизайн. См. [`docs/m2-report.md`](docs/m2-report.md).
+- **M3 — готово.** Share-ссылки, обновление подписок, TCP-пинг, сортировка и
+  подключение к самому быстрому. См. [`docs/m3-report.md`](docs/m3-report.md).
 
 ## Структура
 

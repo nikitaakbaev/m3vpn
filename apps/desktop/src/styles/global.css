@@ -546,6 +546,15 @@ button {
   color: var(--md-sys-color-on-surface);
 }
 
+.m3-segmented__item:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.m3-segmented__item:disabled:hover {
+  background: transparent;
+}
+
 .m3-segmented__item.is-active {
   background: var(--m3-panel-high);
   color: var(--m3-accent);
@@ -1457,15 +1466,6 @@ input[type="number"]::-webkit-inner-spin-button {
   letter-spacing: 0.4px;
 }
 
-.server-row__latency {
-  width: 64px;
-  text-align: right;
-  font-family: var(--m3-mono);
-  font-size: 11.5px;
-  color: var(--m3-text-muted);
-  flex: none;
-}
-
 /* ----------------------------------------------------------- subscriptions */
 
 .profile-grid {
@@ -2000,10 +2000,6 @@ input[type="number"]::-webkit-inner-spin-button {
     max-width: none;
   }
 
-  .server-row__latency {
-    display: none;
-  }
-
   .facts--two {
     grid-template-columns: 1fr;
   }
@@ -2036,5 +2032,99 @@ input[type="number"]::-webkit-inner-spin-button {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+/* ------------------------------------------------------- M3 latency / tools */
+
+.toolbar-card--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbar-row--between {
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--m3-border) 70%, transparent);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbar-note {
+  font-size: 11.5px;
+}
+
+.latency {
+  min-width: 66px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  text-align: right;
+  font-family: var(--m3-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  flex: none;
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 5%, transparent);
+}
+
+.latency.is-good {
+  color: #4ade80;
+  background: color-mix(in srgb, #22c55e 12%, transparent);
+}
+
+.latency.is-ok {
+  color: #facc15;
+  background: color-mix(in srgb, #eab308 12%, transparent);
+}
+
+.latency.is-warn {
+  color: #fb923c;
+  background: color-mix(in srgb, #f97316 12%, transparent);
+}
+
+.latency.is-bad {
+  color: #f87171;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+}
+
+.latency.is-unknown {
+  color: var(--m3-text-muted);
+}
+
+.profile-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+@media (max-width: 1180px) {
+  .toolbar-note {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .latency {
+    display: none;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+  }
+
+  .toolbar-actions .m3-button {
+    flex: 1;
   }
 }

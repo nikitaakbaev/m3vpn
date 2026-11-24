@@ -4,6 +4,7 @@ export interface SegmentOption<T extends string> {
   value: T;
   label: string;
   icon?: string;
+  disabled?: boolean;
 }
 
 interface SegmentedProps<T extends string> {
@@ -24,6 +25,7 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
             type="button"
             role="tab"
             aria-selected={active}
+            disabled={option.disabled}
             className={`m3-segmented__item${active ? " is-active" : ""}`}
             onClick={() => onChange(option.value)}
           >

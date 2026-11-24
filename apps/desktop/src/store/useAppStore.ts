@@ -24,8 +24,11 @@ interface AppStore {
   loaded: boolean;
   busy: boolean;
   importing: boolean;
+  probing: boolean;
+  refreshingId: string | null;
   toast: string | null;
   lastError: string | null;
+  reportedStatusError: string | null;
   load: () => Promise<void>;
   refreshData: () => Promise<void>;
   pollStatus: () => Promise<void>;
@@ -34,7 +37,9 @@ interface AppStore {
   connect: (serverId?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   importSubscription: (url: string, name?: string) => Promise<api.ImportSummary>;
+  refreshProfile: (profileId: string) => Promise<api.ImportSummary | null>;
   deleteProfile: (profileId: string) => Promise<void>;
+  probeAll: (connectFastest?: boolean, silent?: boolean) => Promise<void>;
   pickPort: () => Promise<void>;
   openLogs: () => Promise<void>;
   openCoreDir: () => Promise<void>;
@@ -53,8 +58,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   loaded: false,
   busy: false,
   importing: false,
+  probing: false,
+  refreshingId: null,
   toast: null,
   lastError: null,
+  reportedStatusError: null,
 
   load: async () => {
     try {
@@ -95,8 +103,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const status = await api.connectionStatus();
       set({ status });
-      if (status.error && status.error !== get().lastError) {
-        set({ lastError: status.error });
+      if (status.error) {
+        if (status.error !== get().reportedStatusError) {
+          set({ lastError: status.error, reportedStatusError: status.error });
+        }
+      } else if (get().reportedStatusError) {
+        set({ reportedStatusError: null });
       }
     } catch {
       // The status poll must never surface a snackbar storm.
@@ -125,7 +137,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ busy: true, lastError: null });
     try {
       const status = await api.connectServer(target);
-      set({ status, busy: false, selectedServerId: target });
+      set({
+        status,
+        busy: false,
+        selectedServerId: target,
+        reportedStatusError: null,
+      });
       state.notify(`${translate(state.settings["ui.language"] as Lang, "home.on")}: ${status.serverName ?? ""}`);
     } catch (error) {
       set({ busy: false, lastError: String(error) });
@@ -137,22 +154,43 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ busy: true });
     try {
       const status = await api.disconnectCore();
-      set({ status, busy: false });
+      set({ status, busy: false, reportedStatusError: null });
     } catch (error) {
       set({ busy: false, lastError: String(error) });
     }
   },
 
   importSubscription: async (url, name) => {
-    set({ importing: true, lastError: null });
+    set({ importing: true });
     try {
       const summary = await api.importSubscription(url, name);
       set({ importing: false });
       await get().refreshData();
       return summary;
     } catch (error) {
-      set({ importing: false, lastError: String(error) });
+      // The subscriptions dialog renders import errors inline; a global dialog
+      // on top of it would duplicate the same message.
+      set({ importing: false });
       throw error;
+    }
+  },
+
+  refreshProfile: async (profileId) => {
+    set({ refreshingId: profileId, lastError: null });
+    try {
+      const summary = await api.refreshProfile(profileId);
+      set({ refreshingId: null });
+      await get().refreshData();
+      get().notify(
+        `${translate(get().settings["ui.language"] as Lang, "subs.imported")}: ${summary.servers}` +
+          (summary.skipped
+            ? ` · ${translate(get().settings["ui.language"] as Lang, "subs.skipped")}: ${summary.skipped}`
+            : ""),
+      );
+      return summary;
+    } catch (error) {
+      set({ refreshingId: null, lastError: String(error) });
+      return null;
     }
   },
 
@@ -166,9 +204,45 @@ export const useAppStore = create<AppStore>((set, get) => ({
             : state.selectedServerId,
       }));
       await get().refreshData();
-      get().notify("Подписка удалена");
+      get().notify(translate(get().settings["ui.language"] as Lang, "subs.deleted"));
     } catch (error) {
       set({ lastError: String(error) });
+    }
+  },
+
+  probeAll: async (connectFastest = false, silent = false) => {
+    if (get().probing || get().busy) return;
+    set({ probing: true });
+    try {
+      const timeout = Number(get().settings["ping.timeout_ms"] ?? "3000");
+      const concurrency = Number(get().settings["ping.concurrency"] ?? "8");
+      const results = await api.probeServers(
+        Number.isFinite(timeout) ? timeout : 3000,
+        Number.isFinite(concurrency) ? concurrency : 8,
+      );
+      await get().refreshData();
+      const best = results
+        .filter((result) => result.ok && result.latencyMs !== null)
+        .sort((left, right) => (left.latencyMs ?? 0) - (right.latencyMs ?? 0))[0];
+      const autoSelect = get().settings["select.mode"] !== "manual";
+      const current = get().servers.find((server) => server.id === get().selectedServerId);
+      const currentLatency = current?.latencyMs ?? Number.POSITIVE_INFINITY;
+      const bestLatency = best?.latencyMs ?? Number.POSITIVE_INFINITY;
+      const clearlyBetter = !current || bestLatency < currentLatency * 0.85;
+      if (best && (connectFastest || (autoSelect && !get().status.running && clearlyBetter))) {
+        get().selectServer(best.serverId);
+        if (connectFastest) await get().connect(best.serverId);
+      }
+      if (!silent) {
+        const ok = results.filter((result) => result.ok).length;
+        get().notify(
+          `${translate(get().settings["ui.language"] as Lang, "servers.probe")}: ${ok}/${results.length}`,
+        );
+      }
+    } catch (error) {
+      set({ lastError: String(error) });
+    } finally {
+      set({ probing: false });
     }
   },
 

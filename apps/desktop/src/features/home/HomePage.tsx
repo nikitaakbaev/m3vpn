@@ -22,10 +22,9 @@ export function HomePage({ onNavigate }: HomePageProps) {
   const connect = useAppStore((state) => state.connect);
   const disconnect = useAppStore((state) => state.disconnect);
   const busy = useAppStore((state) => state.busy);
-  const openLogs = useAppStore((state) => state.openLogs);
+  const openCoreDir = useAppStore((state) => state.openCoreDir);
 
-  const port = status.socksPort || Number(settings["proxy.active_port"] ?? 10810);
-  const mode = settings["mode"] === "tun" ? "tun" : "proxy";
+  const port = status.socksPort || Number(settings["proxy.active_port"] ?? "10810") || 10810;
   const selected = servers.find((server) => server.id === selectedServerId) ?? null;
   const profile = profiles[0] ?? null;
   const info = parseUserinfo(profile?.userinfo);
@@ -39,7 +38,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
       <PageHeader
         title={t("home.title")}
         subtitle={t("home.subtitle")}
-        badge={<span className="pill pill--accent">M2</span>}
+        badge={<span className="pill pill--accent">M3</span>}
         actions={
           <Button variant="outlined" icon="dns" onClick={() => onNavigate("servers")}>
             {t("home.openServers")}
@@ -54,7 +53,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
               <span className={`status-dot${status.running ? " is-on" : ""}`} />
               {status.running ? t("home.on") : t("home.off")}
             </span>
-            <span className="hero__mode">{mode === "tun" ? "TUN" : "PROXY"}</span>
+            <span className="hero__mode">PROXY</span>
           </div>
 
           <div className="hero__body">
@@ -72,6 +71,11 @@ export function HomePage({ onNavigate }: HomePageProps) {
                 <span>
                   <Icon name="memory" size={16} /> {core?.xrayVersion?.split(" ").slice(0, 2).join(" ") ?? "Xray"}
                 </span>
+                {selected?.latencyMs !== null && selected?.latencyMs !== undefined ? (
+                  <span>
+                    <Icon name="speed" size={16} /> {selected.latencyMs} ms
+                  </span>
+                ) : null}
               </div>
             </div>
 
@@ -120,7 +124,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
               <>
                 <div className="summary-card__number">{formatBytes(used)}</div>
                 <p className="muted">
-                  из {formatBytes(total)} · до {formatDate(info.expire)}
+                  {t("home.of")} {formatBytes(total)} · {t("home.until")} {formatDate(info.expire)}
                 </p>
                 <div className="progress">
                   <span style={{ width: `${percent}%` }} />
@@ -151,7 +155,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
             </div>
             <p className="mono muted">{core?.xrayVersion ?? "xray —"}</p>
             <div className="core-card__actions">
-              <Button variant="text" icon="folder_open" onClick={() => void openLogs()}>
+              <Button variant="text" icon="folder_open" onClick={() => void openCoreDir()}>
                 {t("home.openLogs")}
               </Button>
             </div>

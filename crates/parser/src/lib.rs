@@ -1,14 +1,15 @@
 //! Subscription parsing for m3vpn.
 //!
-//! M2 supports the provider format used by the test subscription: a JSON array
-//! of complete Xray configs. Share links and AmneziaWG containers are detected
-//! but deferred to later milestones.
+//! Supports complete Xray configs (single object or array) and share links.
+//! AmneziaWG containers are detected but deferred until the sing-box core lands.
 
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
+
+mod links;
 
 const PROXY_PROTOCOLS: &[&str] = &["vless", "vmess", "trojan", "shadowsocks", "socks", "http"];
 const XRAY_PROTOCOLS: &[&str] = &[
@@ -26,17 +27,6 @@ const XRAY_PROTOCOLS: &[&str] = &[
     "hysteria",
 ];
 const UNSUPPORTED_PROXY_PROTOCOLS: &[&str] = &["hysteria", "tuic"];
-
-#[derive(Clone, Debug, Default)]
-pub struct Meta {
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub userinfo: Option<String>,
-    pub update_interval_hours: Option<u32>,
-    pub hide_url: bool,
-    pub support_url: Option<String>,
-    pub web_page_url: Option<String>,
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParsedServer {
@@ -65,7 +55,7 @@ pub enum ParseError {
     NoServers,
 }
 
-pub fn parse_body(body: &str, _meta: &Meta) -> Result<ParseResult, ParseError> {
+pub fn parse_body(body: &str) -> Result<ParseResult, ParseError> {
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return Err(ParseError::Empty);
@@ -215,7 +205,9 @@ fn full_config_server(item: &Value) -> Option<ParsedServer> {
 
 fn first_proxy_endpoint(outbounds: &[Value]) -> Option<(Option<String>, Option<u16>, String)> {
     for outbound in outbounds {
-        let protocol = outbound.get("protocol").and_then(Value::as_str)?;
+        let Some(protocol) = outbound.get("protocol").and_then(Value::as_str) else {
+            continue;
+        };
         if !PROXY_PROTOCOLS.contains(&protocol) {
             continue;
         }
@@ -226,8 +218,14 @@ fn first_proxy_endpoint(outbounds: &[Value]) -> Option<(Option<String>, Option<u
             .and_then(|vnext| vnext.first())
             .map(|first| {
                 (
-                    first.get("address").and_then(Value::as_str).map(str::to_string),
-                    first.get("port").and_then(Value::as_u64).map(|port| port as u16),
+                    first
+                        .get("address")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    first
+                        .get("port")
+                        .and_then(Value::as_u64)
+                        .map(|port| port as u16),
                 )
             })
             .or_else(|| {
@@ -237,8 +235,14 @@ fn first_proxy_endpoint(outbounds: &[Value]) -> Option<(Option<String>, Option<u
                     .and_then(|servers| servers.first())
                     .map(|first| {
                         (
-                            first.get("address").and_then(Value::as_str).map(str::to_string),
-                            first.get("port").and_then(Value::as_u64).map(|port| port as u16),
+                            first
+                                .get("address")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                            first
+                                .get("port")
+                                .and_then(Value::as_u64)
+                                .map(|port| port as u16),
                         )
                     })
             })
@@ -249,7 +253,10 @@ fn first_proxy_endpoint(outbounds: &[Value]) -> Option<(Option<String>, Option<u
                     .and_then(|peers| peers.first())
                     .map(|first| {
                         (
-                            first.get("endpoint").and_then(Value::as_str).map(str::to_string),
+                            first
+                                .get("endpoint")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
                             None,
                         )
                     })
@@ -261,22 +268,10 @@ fn first_proxy_endpoint(outbounds: &[Value]) -> Option<(Option<String>, Option<u
 }
 
 fn parse_lines(body: &str, result: &mut ParseResult) {
-    let mut links = 0usize;
-    for line in body.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if line.contains("://") {
-            links += 1;
-        }
-    }
-    if links > 0 {
-        result.skipped += links;
-        result
-            .notes
-            .push("Share-ссылки: импорт появится в M3".to_string());
-    }
+    let parsed = links::parse_lines(body);
+    result.servers.extend(parsed.servers);
+    result.skipped += parsed.skipped;
+    result.notes.extend(parsed.notes);
 }
 
 #[cfg(test)]
@@ -313,7 +308,7 @@ mod tests {
             full_config("Poland", "vless")
         ]))
         .unwrap();
-        let result = parse_body(&body, &Meta::default()).unwrap();
+        let result = parse_body(&body).unwrap();
         assert_eq!(result.servers.len(), 2);
         assert_eq!(result.servers[0].name, "Germany");
         assert_eq!(result.servers[0].protocol, "vless");
@@ -328,7 +323,7 @@ mod tests {
             full_config("Reality", "vless")
         ]))
         .unwrap();
-        let result = parse_body(&body, &Meta::default()).unwrap();
+        let result = parse_body(&body).unwrap();
         assert_eq!(result.servers.len(), 1);
         assert_eq!(result.skipped, 1);
     }
@@ -337,23 +332,32 @@ mod tests {
     fn parses_base64_encoded_json() {
         let inner = serde_json::to_string(&json!([full_config("Base64", "vless")])).unwrap();
         let body = URL_SAFE_NO_PAD.encode(inner.as_bytes());
-        let result = parse_body(&body, &Meta::default()).unwrap();
+        let result = parse_body(&body).unwrap();
         assert_eq!(result.servers.len(), 1);
         assert_eq!(result.servers[0].name, "Base64");
     }
 
     #[test]
     fn empty_body_is_an_error() {
-        assert!(matches!(
-            parse_body("   ", &Meta::default()),
-            Err(ParseError::Empty)
-        ));
+        assert!(matches!(parse_body("   "), Err(ParseError::Empty)));
     }
 
     #[test]
-    fn reports_share_links_as_deferred() {
-        let body = "vless://uuid@example.com:443#Test\ntrojan://pass@example.com:443#Test2";
-        let err = parse_body(body, &Meta::default()).unwrap_err();
-        assert!(matches!(err, ParseError::NoServers));
+    fn parses_plain_share_links() {
+        let body = "vless://00000000-0000-4000-8000-000000000001@example.com:443?security=tls#Test\ntrojan://pass@example.com:443#Test2";
+        let result = parse_body(body).unwrap();
+        assert_eq!(result.servers.len(), 2);
+        assert_eq!(result.servers[0].protocol, "vless");
+        assert_eq!(result.servers[1].protocol, "trojan");
+    }
+
+    #[test]
+    fn parses_base64_share_links() {
+        let body = STANDARD.encode(
+            b"vless://00000000-0000-4000-8000-000000000001@example.com:443?security=tls#Base64 link",
+        );
+        let result = parse_body(&body).unwrap();
+        assert_eq!(result.servers.len(), 1);
+        assert_eq!(result.servers[0].name, "Base64 link");
     }
 }

@@ -2,7 +2,7 @@ use crate::store::{self, NewProfile, NewServer};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use m3vpn_parser::{parse_body, Meta};
+use m3vpn_parser::parse_body;
 use reqwest::blocking::Client;
 use reqwest::header::HeaderMap;
 use rusqlite::Connection;
@@ -22,6 +22,15 @@ pub struct ImportSummary {
 }
 
 pub fn import(db: &Mutex<Connection>, url: &str, name: Option<String>) -> Result<ImportSummary> {
+    import_into(db, url, name, None)
+}
+
+pub fn import_into(
+    db: &Mutex<Connection>,
+    url: &str,
+    name: Option<String>,
+    existing_id: Option<String>,
+) -> Result<ImportSummary> {
     let url = url.trim();
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         bail!("URL подписки должен начинаться с http:// или https://");
@@ -71,17 +80,7 @@ pub fn import(db: &Mutex<Connection>, url: &str, name: Option<String>) -> Result
         .filter(|value| (1..=24 * 30).contains(value))
         .unwrap_or(24);
 
-    let meta = Meta {
-        title: title.clone(),
-        description: description.clone(),
-        userinfo: userinfo.clone(),
-        update_interval_hours: Some(update_interval_hours),
-        hide_url,
-        support_url: support_url.clone(),
-        web_page_url: web_page_url.clone(),
-    };
-
-    let parsed = parse_body(&body, &meta).map_err(|error| anyhow!(error.to_string()))?;
+    let parsed = parse_body(&body).map_err(|error| anyhow!(error.to_string()))?;
 
     let profile_name = name
         .as_deref()
@@ -94,7 +93,7 @@ pub fn import(db: &Mutex<Connection>, url: &str, name: Option<String>) -> Result
     let profile_name = profile_name.chars().take(80).collect::<String>();
 
     let now = now_secs();
-    let profile_id = format!("p{}", now_millis());
+    let profile_id = existing_id.unwrap_or_else(|| format!("p{}", now_millis()));
     let mut servers = Vec::with_capacity(parsed.servers.len());
 
     for (index, server) in parsed.servers.iter().enumerate() {
@@ -261,6 +260,67 @@ mod tests {
     }
 
     #[test]
+    fn refresh_updates_profile_in_place() {
+        fn body(remarks: &str) -> String {
+            serde_json::to_string(&serde_json::json!([{
+                "remarks": remarks,
+                "inbounds": [
+                    { "tag": "socks", "protocol": "socks", "listen": "127.0.0.1", "port": 10808 }
+                ],
+                "outbounds": [
+                    {
+                        "tag": "proxy",
+                        "protocol": "vless",
+                        "settings": { "vnext": [{ "address": "203.0.113.10", "port": 443, "users": [] }] }
+                    },
+                    { "tag": "direct", "protocol": "freedom" }
+                ]
+            }]))
+            .unwrap()
+        }
+
+        let response = |body: &str| {
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+        };
+
+        let first_url = serve_once(response(&body("First")));
+        let second_url = serve_once(response(&body("Second")));
+
+        let path =
+            std::env::temp_dir().join(format!("m3vpn-refresh-test-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let conn = store::open(&path).expect("open test database");
+        let db = Mutex::new(conn);
+
+        let first = import(&db, &first_url, Some("Profile".to_string())).expect("first import");
+        let second = import_into(
+            &db,
+            &second_url,
+            Some("Profile renamed".to_string()),
+            Some(first.profile_id.clone()),
+        )
+        .expect("refresh import");
+
+        assert_eq!(second.profile_id, first.profile_id);
+        let profiles = store::list_profiles(&db.lock().unwrap()).expect("profiles");
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].name, "Profile renamed");
+
+        let servers = store::list_servers(&db.lock().unwrap(), None).expect("servers");
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "Second");
+
+        drop(db);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), suffix));
+        }
+    }
+
+    #[test]
     #[ignore = "hits the real subscription and starts xray"]
     fn imports_real_subscription_and_connects() {
         use crate::core::{self, CoreState};
@@ -328,7 +388,7 @@ mod tests {
                         server.name,
                         String::from_utf8_lossy(&output.stderr)
                     );
-                    core::disconnect(&state, &paths);
+                    core::disconnect(&state);
                 }
                 Err(error) => {
                     eprintln!("connect failed for {}: {error:#}", server.name);
@@ -337,7 +397,7 @@ mod tests {
         }
 
         assert!(connected, "no imported server accepted a connection");
-        let status = core::disconnect(&state, &paths);
+        let status = core::disconnect(&state);
         assert!(!status.running);
         let _ = std::fs::remove_dir_all(&root);
     }

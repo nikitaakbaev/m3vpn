@@ -21,13 +21,13 @@ export function ErrorDialog() {
   }, [error]);
 
   return (
-    <dialog ref={dialogRef} className="m3-dialog" onClose={clearError}>
+    <dialog ref={dialogRef} className="m3-dialog" aria-labelledby="error-title" onClose={clearError}>
       <div className="m3-dialog__head">
         <span className="m3-dialog__icon">
           <Icon name="error" size={22} filled />
         </span>
         <div>
-          <h2>{t("error.title")}</h2>
+          <h2 id="error-title">{t("error.title")}</h2>
           <p>{t("error.hint")}</p>
         </div>
       </div>
