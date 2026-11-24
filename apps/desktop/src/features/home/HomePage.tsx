@@ -17,6 +17,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
   const servers = useAppStore((state) => state.servers);
   const status = useAppStore((state) => state.status);
   const core = useAppStore((state) => state.core);
+  const rtt = useAppStore((state) => state.rtt);
   const selectedServerId = useAppStore((state) => state.selectedServerId);
   const selectServer = useAppStore((state) => state.selectServer);
   const connect = useAppStore((state) => state.connect);
@@ -38,7 +39,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
       <PageHeader
         title={t("home.title")}
         subtitle={t("home.subtitle")}
-        badge={<span className="pill pill--accent">M3</span>}
+        badge={<span className="pill pill--accent">M4</span>}
         actions={
           <Button variant="outlined" icon="dns" onClick={() => onNavigate("servers")}>
             {t("home.openServers")}
@@ -71,9 +72,13 @@ export function HomePage({ onNavigate }: HomePageProps) {
                 <span>
                   <Icon name="memory" size={16} /> {core?.xrayVersion?.split(" ").slice(0, 2).join(" ") ?? "Xray"}
                 </span>
-                {selected?.latencyMs !== null && selected?.latencyMs !== undefined ? (
+                {status.running && rtt !== null ? (
                   <span>
-                    <Icon name="speed" size={16} /> {selected.latencyMs} ms
+                    <Icon name="speed" size={16} /> {t("home.rtt")} {rtt} ms
+                  </span>
+                ) : selected?.latencyMs !== null && selected?.latencyMs !== undefined ? (
+                  <span>
+                    <Icon name="speed" size={16} /> {t("home.tcp")} {selected.latencyMs} ms
                   </span>
                 ) : null}
               </div>
@@ -241,6 +246,10 @@ export function HomePage({ onNavigate }: HomePageProps) {
               <div>
                 <dt>PID</dt>
                 <dd className="mono">{status.pid ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>{t("home.engine")}</dt>
+                <dd className="mono">{status.engine ?? "—"}</dd>
               </div>
               <div>
                 <dt>SOCKS</dt>

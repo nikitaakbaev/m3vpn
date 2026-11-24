@@ -237,6 +237,7 @@ pub struct ProfileRow {
     pub last_refresh_at: Option<i64>,
     pub created_at: i64,
     pub hide_url: bool,
+    pub url_present: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -317,7 +318,8 @@ pub fn save_import(conn: &Connection, profile: &NewProfile, servers: &[NewServer
 pub fn list_profiles(conn: &Connection) -> Result<Vec<ProfileRow>> {
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, p.title, COUNT(s.id), p.update_interval_hours,
-                p.userinfo_json, p.last_refresh_at, p.created_at, p.url_hidden
+                p.userinfo_json, p.last_refresh_at, p.created_at, p.url_hidden,
+                (p.url IS NOT NULL AND p.url <> '')
          FROM profiles p
          LEFT JOIN servers s ON s.profile_id = p.id
          GROUP BY p.id
@@ -334,6 +336,7 @@ pub fn list_profiles(conn: &Connection) -> Result<Vec<ProfileRow>> {
             last_refresh_at: row.get(6)?,
             created_at: row.get(7)?,
             hide_url: row.get::<_, i64>(8)? != 0,
+            url_present: row.get::<_, i64>(9)? != 0,
         })
     })?;
     let mut result = Vec::new();
@@ -372,12 +375,25 @@ pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<S
     Ok(result)
 }
 
-pub fn server_config(conn: &Connection, server_id: &str) -> Result<Option<(String, String)>> {
+#[derive(Debug, Clone)]
+pub struct ServerDetails {
+    pub name: String,
+    pub protocol: String,
+    pub full_config_json: String,
+}
+
+pub fn server_details(conn: &Connection, server_id: &str) -> Result<Option<ServerDetails>> {
     Ok(conn
         .query_row(
-            "SELECT name, full_config_json FROM servers WHERE id = ?1",
+            "SELECT name, protocol, full_config_json FROM servers WHERE id = ?1",
             [server_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| {
+                Ok(ServerDetails {
+                    name: row.get(0)?,
+                    protocol: row.get(1)?,
+                    full_config_json: row.get(2)?,
+                })
+            },
         )
         .optional()?)
 }

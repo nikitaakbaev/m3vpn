@@ -11,6 +11,18 @@ import { SubscriptionsPage } from "./features/subscriptions/SubscriptionsPage";
 import { RoutingPage } from "./features/routing/RoutingPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 
+function TopbarStatus() {
+  const t = useT();
+  const running = useAppStore((state) => state.status.running);
+  const serverName = useAppStore((state) => state.status.serverName);
+  return (
+    <span className={`pill ${running ? "pill--success" : "pill--muted"}`}>
+      <span className={`status-dot${running ? " is-on" : ""}`} />
+      {running ? serverName ?? t("topbar.connected") : t("topbar.disconnected")}
+    </span>
+  );
+}
+
 const PAGES: Page[] = ["home", "servers", "subscriptions", "routing", "settings"];
 
 function pageFromHash(): Page {
@@ -22,10 +34,11 @@ export default function App() {
   const load = useAppStore((state) => state.load);
   const loaded = useAppStore((state) => state.loaded);
   const settings = useAppStore((state) => state.settings);
-  const status = useAppStore((state) => state.status);
-  const servers = useAppStore((state) => state.servers);
+  const isConnected = useAppStore((state) => state.status.running);
+  const serverCount = useAppStore((state) => state.servers.length);
   const connect = useAppStore((state) => state.connect);
   const probeAll = useAppStore((state) => state.probeAll);
+  const measureRtt = useAppStore((state) => state.measureRtt);
   const pollStatus = useAppStore((state) => state.pollStatus);
   const t = useT();
   const [page, setPageState] = useState<Page>(pageFromHash);
@@ -59,7 +72,7 @@ export default function App() {
   }, [loaded, pollStatus]);
 
   useEffect(() => {
-    if (!loaded || pingEnabled !== "true") return;
+    if (!loaded || pingEnabled !== "true" || serverCount === 0) return;
     const seconds = Math.max(5, Number(pingInterval) || 60);
     const first = window.setTimeout(() => void probeAll(false, true), 1500);
     const timer = window.setInterval(() => void probeAll(false, true), seconds * 1000);
@@ -67,15 +80,22 @@ export default function App() {
       window.clearTimeout(first);
       window.clearInterval(timer);
     };
-  }, [loaded, pingEnabled, pingInterval, probeAll]);
+  }, [loaded, pingEnabled, pingInterval, serverCount, probeAll]);
+
+  useEffect(() => {
+    if (!isConnected) return;
+    void measureRtt();
+    const timer = window.setInterval(() => void measureRtt(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [isConnected, measureRtt]);
 
   useEffect(() => {
     if (!loaded || autoTried.current) return;
     if (!autoconnect) return;
-    if (status.running || servers.length === 0) return;
+    if (isConnected || serverCount === 0) return;
     autoTried.current = true;
     void connect();
-  }, [loaded, autoconnect, status.running, servers.length, connect]);
+  }, [loaded, autoconnect, isConnected, serverCount, connect]);
 
   useEffect(() => {
     applyTheme(seed, theme);
@@ -110,10 +130,7 @@ export default function App() {
             <span className="topbar__tag">Material 3 · Linux</span>
           </div>
           <div className="topbar__actions">
-            <span className={`pill ${status.running ? "pill--success" : "pill--muted"}`}>
-              <span className={`status-dot${status.running ? " is-on" : ""}`} />
-              {status.running ? status.serverName ?? t("topbar.connected") : t("topbar.disconnected")}
-            </span>
+            <TopbarStatus />
             <span className="pill pill--tonal">{t("topbar.badge")}</span>
           </div>
         </header>

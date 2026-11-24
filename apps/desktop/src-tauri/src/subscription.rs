@@ -2,7 +2,7 @@ use crate::store::{self, NewProfile, NewServer};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use m3vpn_parser::parse_body;
+use m3vpn_parser::{parse_body, ParseResult};
 use reqwest::blocking::Client;
 use reqwest::header::HeaderMap;
 use rusqlite::Connection;
@@ -81,7 +81,6 @@ pub fn import_into(
         .unwrap_or(24);
 
     let parsed = parse_body(&body).map_err(|error| anyhow!(error.to_string()))?;
-
     let profile_name = name
         .as_deref()
         .map(str::trim)
@@ -90,17 +89,93 @@ pub fn import_into(
         .or_else(|| title.clone())
         .or(inline_name)
         .unwrap_or_else(|| "Подписка".to_string());
-    let profile_name = profile_name.chars().take(80).collect::<String>();
 
+    save_parsed(
+        db,
+        parsed,
+        ProfileMeta {
+            name: profile_name,
+            url: url.to_string(),
+            title,
+            description,
+            support_url,
+            web_page_url,
+            update_interval_hours,
+            userinfo,
+            hide_url,
+            source: "subscription",
+            existing_id,
+        },
+    )
+}
+
+pub fn import_awg(
+    db: &Mutex<Connection>,
+    conf: &str,
+    name: Option<String>,
+) -> Result<ImportSummary> {
+    let parsed = parse_body(conf.trim()).map_err(|error| anyhow!(error.to_string()))?;
+    if !parsed.servers.iter().any(|server| server.protocol == "awg") {
+        bail!("в тексте не найден AmneziaWG .conf");
+    }
+    let profile_name = name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| parsed.servers.first().map(|server| server.name.clone()))
+        .unwrap_or_else(|| "AmneziaWG".to_string());
+
+    save_parsed(
+        db,
+        parsed,
+        ProfileMeta {
+            name: profile_name,
+            url: String::new(),
+            title: Some("AmneziaWG".to_string()),
+            description: None,
+            support_url: None,
+            web_page_url: None,
+            update_interval_hours: 24,
+            userinfo: None,
+            hide_url: true,
+            source: "amneziawg",
+            existing_id: None,
+        },
+    )
+}
+
+struct ProfileMeta {
+    name: String,
+    url: String,
+    title: Option<String>,
+    description: Option<String>,
+    support_url: Option<String>,
+    web_page_url: Option<String>,
+    update_interval_hours: u32,
+    userinfo: Option<String>,
+    hide_url: bool,
+    source: &'static str,
+    existing_id: Option<String>,
+}
+
+fn save_parsed(
+    db: &Mutex<Connection>,
+    parsed: ParseResult,
+    meta: ProfileMeta,
+) -> Result<ImportSummary> {
+    let profile_name = meta.name.chars().take(80).collect::<String>();
     let now = now_secs();
-    let profile_id = existing_id.unwrap_or_else(|| format!("p{}", now_millis()));
+    let profile_id = meta
+        .existing_id
+        .unwrap_or_else(|| format!("p{}", now_millis()));
     let mut servers = Vec::with_capacity(parsed.servers.len());
 
     for (index, server) in parsed.servers.iter().enumerate() {
         let params = serde_json::json!({
             "remarks": server.remarks,
             "protocol": server.protocol,
-            "source": "full-xray",
+            "source": meta.source,
         });
         servers.push(NewServer {
             id: format!("{profile_id}:{index}"),
@@ -118,14 +193,14 @@ pub fn import_into(
     let profile = NewProfile {
         id: profile_id.clone(),
         name: profile_name.clone(),
-        url: url.to_string(),
-        url_hidden: hide_url,
-        title: title.clone(),
-        description,
-        support_url,
-        web_page_url,
-        update_interval_hours,
-        userinfo,
+        url: meta.url,
+        url_hidden: meta.hide_url,
+        title: meta.title.clone(),
+        description: meta.description,
+        support_url: meta.support_url,
+        web_page_url: meta.web_page_url,
+        update_interval_hours: meta.update_interval_hours,
+        userinfo: meta.userinfo,
         created_at: now,
         updated_at: now,
     };
@@ -137,6 +212,7 @@ pub fn import_into(
 
     tracing::info!(
         profile = %profile_name,
+        source = meta.source,
         servers = servers.len(),
         skipped = parsed.skipped,
         "subscription imported"
@@ -145,7 +221,7 @@ pub fn import_into(
     Ok(ImportSummary {
         profile_id,
         name: profile_name,
-        title,
+        title: meta.title,
         servers: servers.len(),
         skipped: parsed.skipped,
         notes: parsed.notes,
@@ -321,6 +397,81 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the local AmneziaWG server on 127.0.0.1:51830"]
+    fn imports_awg_conf_and_connects_with_singbox() {
+        use crate::core::{self, CoreState};
+        use crate::paths::AppPaths;
+        use crate::sidecars::Sidecars;
+
+        let conf = std::fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../.secrets/awg-client.conf"),
+        )
+        .expect("AWG client conf");
+
+        let root = std::env::temp_dir().join(format!("m3vpn-awg-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("logs")).unwrap();
+        std::fs::create_dir_all(root.join("core")).unwrap();
+        let paths = AppPaths {
+            data_dir: root.clone(),
+            db_path: root.join("test.db"),
+            log_dir: root.join("logs"),
+            core_dir: root.join("core"),
+            xray_config: root.join("core/xray.json"),
+            xray_log: root.join("core/xray.log"),
+            singbox_config: root.join("core/singbox.json"),
+            singbox_log: root.join("core/singbox.log"),
+        };
+
+        let conn = store::open(&paths.db_path).expect("open test database");
+        let db = Mutex::new(conn);
+        let summary = import_awg(&db, &conf, Some("AWG Test".to_string())).expect("import awg");
+        assert_eq!(summary.servers, 1);
+
+        let servers = store::list_servers(&db.lock().unwrap(), None).expect("servers");
+        let details = store::server_details(&db.lock().unwrap(), &servers[0].id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(details.protocol, "awg");
+        let config: serde_json::Value = serde_json::from_str(&details.full_config_json).unwrap();
+
+        let sidecars = Sidecars::discover().expect("sidecars");
+        let state = Mutex::new(CoreState::new(22808));
+        let status = core::connect_singbox(
+            &state,
+            &paths,
+            &sidecars,
+            &servers[0].id,
+            &details.name,
+            config,
+        )
+        .expect("connect sing-box");
+        assert!(status.running);
+        assert_eq!(status.engine.as_deref(), Some("sing-box"));
+
+        let output = std::process::Command::new("curl")
+            .arg("-fsS")
+            .arg("--max-time")
+            .arg("20")
+            .arg("--socks5-hostname")
+            .arg("127.0.0.1:22808")
+            .arg("https://www.cloudflare.com/cdn-cgi/trace")
+            .output()
+            .expect("run curl through sing-box");
+        assert!(
+            output.status.success(),
+            "curl failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("loc="));
+
+        let status = core::disconnect(&state);
+        assert!(!status.running);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     #[ignore = "hits the real subscription and starts xray"]
     fn imports_real_subscription_and_connects() {
         use crate::core::{self, CoreState};
@@ -347,6 +498,8 @@ mod tests {
             core_dir: root.join("core"),
             xray_config: root.join("core/xray.json"),
             xray_log: root.join("core/xray.log"),
+            singbox_config: root.join("core/singbox.json"),
+            singbox_log: root.join("core/singbox.log"),
         };
 
         let conn = store::open(&paths.db_path).expect("open test database");
@@ -360,11 +513,12 @@ mod tests {
 
         let mut connected = false;
         for server in servers.iter().take(4) {
-            let (name, config_text) = store::server_config(&db.lock().unwrap(), &server.id)
+            let details = store::server_details(&db.lock().unwrap(), &server.id)
                 .unwrap()
                 .unwrap();
-            let config: serde_json::Value = serde_json::from_str(&config_text).unwrap();
-            match core::connect(&state, &paths, &sidecars, &server.id, &name, config) {
+            let config: serde_json::Value =
+                serde_json::from_str(&details.full_config_json).unwrap();
+            match core::connect_xray(&state, &paths, &sidecars, &server.id, &details.name, config) {
                 Ok(status) => {
                     eprintln!("connected to {} ({})", server.name, status.socks_port);
                     let output = std::process::Command::new("curl")

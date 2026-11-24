@@ -19,7 +19,7 @@ export function SettingsPage() {
   const openLogs = useAppStore((state) => state.openLogs);
   const openCoreDir = useAppStore((state) => state.openCoreDir);
   const core = useAppStore((state) => state.core);
-  const status = useAppStore((state) => state.status);
+  const isConnected = useAppStore((state) => state.status.running);
   const notify = useAppStore((state) => state.notify);
 
   const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
@@ -42,7 +42,7 @@ export function SettingsPage() {
       <PageHeader
         title={t("settings.title")}
         subtitle={t("settings.subtitle")}
-        badge={<span className="pill pill--accent">M3</span>}
+        badge={<span className="pill pill--accent">M4</span>}
       />
 
       <div className="settings-grid">
@@ -168,8 +168,8 @@ export function SettingsPage() {
             <Button
               variant="tonal"
               icon="autorenew"
-              disabled={status.running}
-              title={status.running ? t("settings.portLocked") : undefined}
+              disabled={isConnected}
+              title={isConnected ? t("settings.portLocked") : undefined}
               onClick={() => void pickPort()}
             >
               {t("settings.pickPort")}
@@ -305,6 +305,14 @@ export function SettingsPage() {
               <strong>{t("settings.xrayVersion")}</strong>
               <span>{core?.xrayVersion ?? "—"}</span>
             </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>sing-box</strong>
+              <span className="path">{core?.singboxPath ?? "—"}</span>
+              <span>{core?.singboxVersion ?? "—"}</span>
+            </div>
+            <span className={`status-dot${core?.singboxAvailable ? " is-on" : ""}`} />
           </div>
           <div className="settings-row">
             <div className="settings-row__text">

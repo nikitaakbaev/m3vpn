@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+mod awg;
 mod links;
 
 const PROXY_PROTOCOLS: &[&str] = &["vless", "vmess", "trojan", "shadowsocks", "socks", "http"];
@@ -53,6 +54,8 @@ pub enum ParseError {
     InvalidJson(String),
     #[error("subscription contains no supported servers")]
     NoServers,
+    #[error("invalid AmneziaWG config: {0}")]
+    InvalidAwg(String),
 }
 
 pub fn parse_body(body: &str) -> Result<ParseResult, ParseError> {
@@ -63,11 +66,15 @@ pub fn parse_body(body: &str) -> Result<ParseResult, ParseError> {
 
     let mut result = ParseResult::default();
 
-    if looks_like_json(trimmed) {
+    if looks_like_awg(trimmed) {
+        push_awg(trimmed, None, &mut result)?;
+    } else if looks_like_json(trimmed) {
         parse_json_body(trimmed, &mut result)?;
     } else if let Some(decoded) = try_base64(trimmed) {
         let decoded = decoded.trim();
-        if looks_like_json(decoded) {
+        if looks_like_awg(decoded) {
+            push_awg(decoded, None, &mut result)?;
+        } else if looks_like_json(decoded) {
             parse_json_body(decoded, &mut result)?;
         } else {
             parse_lines(decoded, &mut result);
@@ -86,6 +93,19 @@ fn looks_like_json(value: &str) -> bool {
     value.starts_with('{') || value.starts_with('[')
 }
 
+fn looks_like_awg(value: &str) -> bool {
+    value.contains("[Interface]") && value.to_ascii_lowercase().contains("privatekey")
+}
+
+fn push_awg(text: &str, name: Option<String>, result: &mut ParseResult) -> Result<(), ParseError> {
+    let mut server = awg::parse_conf(text).map_err(ParseError::InvalidAwg)?;
+    if let Some(name) = name.filter(|name| !name.is_empty()) {
+        server.name = name;
+    }
+    result.servers.push(server);
+    Ok(())
+}
+
 fn try_base64(value: &str) -> Option<String> {
     let compact: String = value.split_whitespace().collect();
     if compact.len() < 16 {
@@ -95,7 +115,7 @@ fn try_base64(value: &str) -> Option<String> {
         if let Ok(bytes) = engine.decode(compact.as_bytes()) {
             if let Ok(text) = String::from_utf8(bytes) {
                 let text = text.trim().to_string();
-                if text.contains("://") || looks_like_json(&text) {
+                if text.contains("://") || looks_like_json(&text) || looks_like_awg(&text) {
                     return Some(text);
                 }
             }
@@ -129,10 +149,28 @@ fn parse_item(item: &Value, result: &mut ParseResult) {
     }
 
     if item.get("type").and_then(Value::as_str) == Some("amneziawg") {
-        result.skipped += 1;
-        result
-            .notes
-            .push("AmneziaWG container: появится в M5".to_string());
+        let Some(servers) = item.get("servers").and_then(Value::as_array) else {
+            result.skipped += 1;
+            return;
+        };
+        for entry in servers {
+            let Some(payload) = entry.get("config").and_then(Value::as_str) else {
+                result.skipped += 1;
+                continue;
+            };
+            let Some(conf) = awg::decode_conf_payload(payload) else {
+                result.skipped += 1;
+                continue;
+            };
+            let name = entry
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if let Err(error) = push_awg(&conf, name, result) {
+                result.skipped += 1;
+                result.notes.push(error.to_string());
+            }
+        }
         return;
     }
 
@@ -340,6 +378,15 @@ mod tests {
     #[test]
     fn empty_body_is_an_error() {
         assert!(matches!(parse_body("   "), Err(ParseError::Empty)));
+    }
+
+    #[test]
+    fn parses_raw_awg_body() {
+        let body = "# Name = Raw AWG\n[Interface]\nPrivateKey = AAAA\nAddress = 10.8.0.2/32\n[Peer]\nPublicKey = BBBB\nEndpoint = example.com:51820\nAllowedIPs = 0.0.0.0/0\n";
+        let result = parse_body(body).unwrap();
+        assert_eq!(result.servers.len(), 1);
+        assert_eq!(result.servers[0].protocol, "awg");
+        assert_eq!(result.servers[0].name, "Raw AWG");
     }
 
     #[test]

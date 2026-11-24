@@ -27,7 +27,9 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
   const t = useT();
   const servers = useAppStore((state) => state.servers);
   const profiles = useAppStore((state) => state.profiles);
-  const status = useAppStore((state) => state.status);
+  const connectedServerId = useAppStore((state) =>
+    state.status.running ? state.status.serverId : null,
+  );
   const selectedServerId = useAppStore((state) => state.selectedServerId);
   const selectServer = useAppStore((state) => state.selectServer);
   const connect = useAppStore((state) => state.connect);
@@ -75,7 +77,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
 
   const renderRow = (server: Server) => {
     const selected = server.id === selectedServerId;
-    const connected = status.running && server.id === status.serverId;
+    const connected = connectedServerId === server.id;
     return (
       <div
         key={server.id}
@@ -126,7 +128,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
       <PageHeader
         title={t("servers.title")}
         subtitle={t("servers.subtitle")}
-        badge={<span className="pill pill--accent">M3</span>}
+        badge={<span className="pill pill--accent">M4</span>}
         actions={
           <>
             <Button variant="text" icon="refresh" onClick={() => void refreshData()}>
@@ -167,7 +169,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             <span className="chip">
               {profiles.length} {t("home.profilesShort")}
             </span>
-            {status.running ? (
+            {connectedServerId !== null ? (
               <span className="chip chip--success">
                 {t("servers.connectedCount")}: 1
               </span>

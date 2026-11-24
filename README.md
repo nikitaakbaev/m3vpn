@@ -12,6 +12,8 @@
   новый dark Material 3 дизайн. См. [`docs/m2-report.md`](docs/m2-report.md).
 - **M3 — готово.** Share-ссылки, обновление подписок, TCP-пинг, сортировка и
   подключение к самому быстрому. См. [`docs/m3-report.md`](docs/m3-report.md).
+- **M4 — готово.** Исправлены зависания, добавлены AmneziaWG через sing-box,
+  реальный RTT и второй core. См. [`docs/m4-report.md`](docs/m4-report.md).
 
 ## Структура
 

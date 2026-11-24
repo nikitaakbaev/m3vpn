@@ -13,6 +13,7 @@ export function SubscriptionsPage() {
   const profiles = useAppStore((state) => state.profiles);
   const importing = useAppStore((state) => state.importing);
   const importSubscription = useAppStore((state) => state.importSubscription);
+  const importAwg = useAppStore((state) => state.importAwg);
   const deleteProfile = useAppStore((state) => state.deleteProfile);
   const refreshProfile = useAppStore((state) => state.refreshProfile);
   const refreshingId = useAppStore((state) => state.refreshingId);
@@ -45,12 +46,16 @@ export function SubscriptionsPage() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    if (!/^https?:\/\//.test(url.trim())) {
+    const text = url.trim();
+    const isAwg = text.includes("[Interface]") || /^(amneziawg|awg):\/\//i.test(text);
+    if (!isAwg && !/^https?:\/\//.test(text)) {
       setError(t("subs.invalidUrl"));
       return;
     }
     try {
-      const summary = await importSubscription(url.trim(), name.trim() || undefined);
+      const summary = isAwg
+        ? await importAwg(text, name.trim() || undefined)
+        : await importSubscription(text, name.trim() || undefined);
       setLastImport(summary);
       dialogRef.current?.close();
       setUrl("");
@@ -69,7 +74,7 @@ export function SubscriptionsPage() {
       <PageHeader
         title={t("subs.title")}
         subtitle={t("subs.subtitle")}
-        badge={<span className="pill pill--accent">M3</span>}
+        badge={<span className="pill pill--accent">M4</span>}
         actions={
           <Button icon="add_link" onClick={openDialog}>
             {t("subs.add")}
@@ -131,19 +136,21 @@ export function SubscriptionsPage() {
                     </div>
                   </div>
                   <div className="profile-card__actions">
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label={t("subs.refresh")}
-                      title={t("subs.refresh")}
-                      disabled={refreshingId === profile.id}
-                      onClick={() => void refreshProfile(profile.id)}
-                    >
-                      <Icon
-                        name={refreshingId === profile.id ? "progress_activity" : "refresh"}
-                        size={19}
-                      />
-                    </button>
+                    {profile.urlPresent ? (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={t("subs.refresh")}
+                        title={t("subs.refresh")}
+                        disabled={refreshingId === profile.id}
+                        onClick={() => void refreshProfile(profile.id)}
+                      >
+                        <Icon
+                          name={refreshingId === profile.id ? "progress_activity" : "refresh"}
+                          size={19}
+                        />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="icon-button icon-button--danger"
@@ -234,15 +241,16 @@ export function SubscriptionsPage() {
 
           <label className="m3-field">
             <span className="m3-field__label">{t("subs.urlLabel")}</span>
-            <input
-              className="m3-input"
-              type="url"
+            <textarea
+              className="m3-input m3-textarea"
               autoFocus
-              placeholder="https://provider.example/sub/..."
+              rows={4}
+              placeholder="https://provider.example/sub/... или [Interface] ..."
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               disabled={importing}
             />
+            <span className="m3-field__hint">{t("subs.awgHint")}</span>
           </label>
 
           <label className="m3-field">

@@ -1,4 +1,4 @@
-use crate::core::xray;
+use crate::core::{singbox, xray};
 use crate::paths::AppPaths;
 use crate::sidecars::Sidecars;
 use anyhow::{anyhow, bail, Context, Result};
@@ -11,6 +11,35 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Engine {
+    Xray,
+    SingBox,
+}
+
+impl Engine {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Xray => "xray",
+            Self::SingBox => "sing-box",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Xray => "Xray",
+            Self::SingBox => "sing-box",
+        }
+    }
+
+    fn log_path(self, paths: &AppPaths) -> &Path {
+        match self {
+            Self::Xray => &paths.xray_log,
+            Self::SingBox => &paths.singbox_log,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct CoreState {
     pub process: Option<Child>,
@@ -19,6 +48,7 @@ pub struct CoreState {
     pub started_at: Option<i64>,
     pub socks_port: u16,
     pub http_port: u16,
+    pub engine: Option<Engine>,
     pub error: Option<String>,
 }
 
@@ -42,27 +72,33 @@ pub struct ConnectionStatus {
     pub http_port: u16,
     pub pid: Option<u32>,
     pub started_at: Option<i64>,
+    pub engine: Option<String>,
     pub error: Option<String>,
 }
 
-pub fn status(lock: &Mutex<CoreState>, log_path: &Path) -> ConnectionStatus {
+pub fn status(lock: &Mutex<CoreState>, paths: &AppPaths) -> ConnectionStatus {
     let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut running = false;
     let mut pid = None;
+    let engine = guard.engine.unwrap_or(Engine::Xray);
+    let log_path = engine.log_path(paths);
 
     if let Some(child) = guard.process.as_mut() {
         match child.try_wait() {
             Ok(Some(exit)) => {
                 let tail = log_tail(log_path, 25);
                 guard.process = None;
-                guard.error = Some(format!("Xray завершился ({exit}).\n{tail}"));
+                guard.error = Some(format!("{} завершился ({exit}).\n{tail}", engine.label()));
             }
             Ok(None) => {
                 running = true;
                 pid = Some(child.id());
             }
             Err(error) => {
-                guard.error = Some(format!("не удалось проверить процесс Xray: {error}"));
+                guard.error = Some(format!(
+                    "не удалось проверить процесс {}: {error}",
+                    engine.label()
+                ));
             }
         }
     }
@@ -75,11 +111,12 @@ pub fn status(lock: &Mutex<CoreState>, log_path: &Path) -> ConnectionStatus {
         http_port: guard.http_port,
         pid,
         started_at: guard.started_at,
+        engine: guard.engine.map(|engine| engine.id().to_string()),
         error: guard.error.clone(),
     }
 }
 
-pub fn connect(
+pub fn connect_xray(
     lock: &Mutex<CoreState>,
     paths: &AppPaths,
     sidecars: &Sidecars,
@@ -88,11 +125,7 @@ pub fn connect(
     mut config: serde_json::Value,
 ) -> Result<ConnectionStatus> {
     sidecars.check()?;
-
-    let (socks_port, http_port) = {
-        let guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        (guard.socks_port, guard.http_port)
-    };
+    let (socks_port, http_port) = ports(lock);
 
     xray::patch(
         &mut config,
@@ -102,21 +135,152 @@ pub fn connect(
         "warning",
     )?;
     xray::write_config(&config, &paths.xray_config)?;
-
     disconnect(lock);
 
-    let log = File::create(&paths.xray_log).context("create xray log")?;
-    let stdout = log.try_clone().context("clone xray log handle")?;
+    let child = spawn(
+        &sidecars.xray(),
+        &paths.xray_config,
+        &paths.xray_log,
+        Some(("XRAY_LOCATION_ASSET", sidecars.assets_dir())),
+    )?;
+    let pid = child.id();
+    set_running(lock, child, server_id, server_name, Engine::Xray);
+    tracing::info!(pid, server = %server_name, socks_port, "xray started");
 
-    let mut command = Command::new(sidecars.xray());
+    wait_ready(lock, Engine::Xray, paths, socks_port)?;
+    Ok(status(lock, paths))
+}
+
+pub fn connect_singbox(
+    lock: &Mutex<CoreState>,
+    paths: &AppPaths,
+    sidecars: &Sidecars,
+    server_id: &str,
+    server_name: &str,
+    mut config: serde_json::Value,
+) -> Result<ConnectionStatus> {
+    sidecars.check_singbox()?;
+    let (socks_port, _) = ports(lock);
+    let api_port = crate::port::find_free_port(socks_port.saturating_add(100))
+        .context("find free sing-box API port")?;
+
+    singbox::patch(&mut config, socks_port, api_port)?;
+    singbox::write_config(&config, &paths.singbox_config)?;
+    disconnect(lock);
+
+    let child = spawn(
+        &sidecars.singbox(),
+        &paths.singbox_config,
+        &paths.singbox_log,
+        None,
+    )?;
+    let pid = child.id();
+    set_running(lock, child, server_id, server_name, Engine::SingBox);
+    tracing::info!(pid, server = %server_name, socks_port, "sing-box started");
+
+    wait_ready(lock, Engine::SingBox, paths, socks_port)?;
+    Ok(status(lock, paths))
+}
+
+pub fn disconnect(lock: &Mutex<CoreState>) -> ConnectionStatus {
+    let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if let Some(mut child) = guard.process.take() {
+        let pid = child.id();
+        let engine = guard.engine.map(|engine| engine.label()).unwrap_or("core");
+        let _ = child.kill();
+        let _ = child.wait();
+        tracing::info!(pid, engine, "core stopped");
+    }
+
+    guard.server_id = None;
+    guard.server_name = None;
+    guard.started_at = None;
+    guard.engine = None;
+    guard.error = None;
+
+    ConnectionStatus {
+        running: false,
+        server_id: None,
+        server_name: None,
+        socks_port: guard.socks_port,
+        http_port: guard.http_port,
+        pid: None,
+        started_at: None,
+        engine: None,
+        error: None,
+    }
+}
+
+pub fn rtt(lock: &Mutex<CoreState>) -> Result<Option<u64>> {
+    let (running, socks_port) = {
+        let guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        (guard.process.is_some(), guard.socks_port)
+    };
+    if !running {
+        return Ok(None);
+    }
+
+    let proxy = reqwest::Proxy::all(format!("socks5h://127.0.0.1:{socks_port}"))
+        .context("build SOCKS proxy")?;
+    let client = reqwest::blocking::Client::builder()
+        .proxy(proxy)
+        .timeout(Duration::from_secs(6))
+        .build()
+        .context("build RTT client")?;
+
+    let started = Instant::now();
+    let response = client
+        .get("https://www.gstatic.com/generate_204")
+        .send()
+        .context("RTT request")?;
+    if !response.status().is_success() {
+        bail!("RTT probe returned {}", response.status());
+    }
+    Ok(Some(started.elapsed().as_millis() as u64))
+}
+
+fn ports(lock: &Mutex<CoreState>) -> (u16, u16) {
+    let guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    (guard.socks_port, guard.http_port)
+}
+
+fn set_running(
+    lock: &Mutex<CoreState>,
+    child: Child,
+    server_id: &str,
+    server_name: &str,
+    engine: Engine,
+) {
+    let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    guard.process = Some(child);
+    guard.server_id = Some(server_id.to_string());
+    guard.server_name = Some(server_name.to_string());
+    guard.started_at = Some(now_secs());
+    guard.engine = Some(engine);
+    guard.error = None;
+}
+
+fn spawn(
+    binary: &Path,
+    config: &Path,
+    log_path: &Path,
+    extra_env: Option<(&str, std::path::PathBuf)>,
+) -> Result<Child> {
+    let log = File::create(log_path).with_context(|| format!("create {}", log_path.display()))?;
+    let stdout = log.try_clone().context("clone core log handle")?;
+
+    let mut command = Command::new(binary);
     command
         .arg("run")
         .arg("-c")
-        .arg(&paths.xray_config)
-        .env("XRAY_LOCATION_ASSET", sidecars.assets_dir())
+        .arg(config)
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(log));
+    if let Some((key, value)) = extra_env {
+        command.env(key, value);
+    }
 
     // If the UI is killed with SIGKILL, take the core down with it instead of
     // leaving an orphan process bound to the local proxy port.
@@ -131,84 +295,54 @@ pub fn connect(
         }
     }
 
-    let child = command.spawn().context("spawn xray")?;
-    let pid = child.id();
-    tracing::info!(pid, server = %server_name, socks_port, "xray started");
+    command
+        .spawn()
+        .with_context(|| format!("spawn {}", binary.display()))
+}
 
-    {
-        let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        guard.process = Some(child);
-        guard.server_id = Some(server_id.to_string());
-        guard.server_name = Some(server_name.to_string());
-        guard.started_at = Some(now_secs());
-        guard.error = None;
-    }
-
+fn wait_ready(
+    lock: &Mutex<CoreState>,
+    engine: Engine,
+    paths: &AppPaths,
+    socks_port: u16,
+) -> Result<()> {
+    let log_path = engine.log_path(paths);
     let address = SocketAddr::from(([127, 0, 0, 1], socks_port));
     let deadline = Instant::now() + Duration::from_secs(6);
 
     loop {
-        if let Some(error) = poll_exit(lock, &paths.xray_log) {
+        if let Some(error) = poll_exit(lock, engine, log_path) {
             return Err(anyhow!(error));
         }
-
         if TcpStream::connect_timeout(&address, Duration::from_millis(150)).is_ok() {
-            break;
+            return Ok(());
         }
-
         if Instant::now() >= deadline {
             disconnect(lock);
-            let tail = log_tail(&paths.xray_log, 25);
-            bail!("Xray не открыл порт {socks_port} за 6 секунд.\n{tail}");
+            let tail = log_tail(log_path, 25);
+            bail!(
+                "{} не открыл порт {socks_port} за 6 секунд.\n{tail}",
+                engine.label()
+            );
         }
-
         std::thread::sleep(Duration::from_millis(100));
     }
-
-    Ok(status(lock, &paths.xray_log))
 }
 
-pub fn disconnect(lock: &Mutex<CoreState>) -> ConnectionStatus {
-    let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-
-    if let Some(mut child) = guard.process.take() {
-        let pid = child.id();
-        let _ = child.kill();
-        let _ = child.wait();
-        tracing::info!(pid, "xray stopped");
-    }
-
-    guard.server_id = None;
-    guard.server_name = None;
-    guard.started_at = None;
-    guard.error = None;
-
-    ConnectionStatus {
-        running: false,
-        server_id: None,
-        server_name: None,
-        socks_port: guard.socks_port,
-        http_port: guard.http_port,
-        pid: None,
-        started_at: None,
-        error: None,
-    }
-}
-
-fn poll_exit(lock: &Mutex<CoreState>, log_path: &Path) -> Option<String> {
+fn poll_exit(lock: &Mutex<CoreState>, engine: Engine, log_path: &Path) -> Option<String> {
     let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let child = guard.process.as_mut()?;
     match child.try_wait() {
         Ok(Some(exit)) => {
             let tail = log_tail(log_path, 25);
             guard.process = None;
-            let message = format!("Xray завершился ({exit}).\n{tail}");
+            let message = format!("{} завершился ({exit}).\n{tail}", engine.label());
             guard.error = Some(message.clone());
             Some(message)
         }
         Ok(None) => None,
         Err(error) => {
-            let message = format!("не удалось проверить процесс Xray: {error}");
+            let message = format!("не удалось проверить процесс {}: {error}", engine.label());
             guard.error = Some(message.clone());
             Some(message)
         }
@@ -263,6 +397,8 @@ mod tests {
             core_dir: root.join("core"),
             xray_config: root.join("core/xray.json"),
             xray_log: root.join("core/xray.log"),
+            singbox_config: root.join("core/singbox.json"),
+            singbox_log: root.join("core/singbox.log"),
         };
         let sidecars = Sidecars::discover().expect("sidecars");
 
@@ -290,9 +426,10 @@ mod tests {
             ]
         });
 
-        let status =
-            connect(&state, &paths, &sidecars, "test", "Local test", config).expect("connect xray");
+        let status = connect_xray(&state, &paths, &sidecars, "test", "Local test", config)
+            .expect("connect xray");
         assert!(status.running);
+        assert_eq!(status.engine.as_deref(), Some("xray"));
 
         let output = std::process::Command::new("curl")
             .arg("-fsS")
@@ -309,6 +446,9 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
+
+        let rtt = rtt(&state).expect("rtt").expect("running");
+        assert!(rtt > 0);
 
         let status = disconnect(&state);
         assert!(!status.running);

@@ -9,6 +9,8 @@ pub struct AppPaths {
     pub core_dir: PathBuf,
     pub xray_config: PathBuf,
     pub xray_log: PathBuf,
+    pub singbox_config: PathBuf,
+    pub singbox_log: PathBuf,
 }
 
 impl AppPaths {
@@ -22,6 +24,8 @@ impl AppPaths {
         Ok(Self {
             xray_config: core_dir.join("xray.json"),
             xray_log: core_dir.join("xray.log"),
+            singbox_config: core_dir.join("singbox.json"),
+            singbox_log: core_dir.join("singbox.log"),
             data_dir,
             db_path,
             log_dir,

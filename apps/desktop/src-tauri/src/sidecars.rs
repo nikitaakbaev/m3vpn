@@ -38,6 +38,10 @@ impl Sidecars {
         self.root.join("bin/xray")
     }
 
+    pub fn singbox(&self) -> PathBuf {
+        self.root.join("bin/hiddify-sing-box")
+    }
+
     pub fn assets_dir(&self) -> PathBuf {
         self.root.join("assets")
     }
@@ -55,12 +59,25 @@ impl Sidecars {
         Ok(())
     }
 
-    pub fn version(&self) -> Result<String> {
-        let output = std::process::Command::new(self.xray())
-            .arg("version")
-            .output()
-            .context("run xray version")?;
-        let text = String::from_utf8_lossy(&output.stdout);
-        Ok(text.lines().next().unwrap_or("unknown").to_string())
+    pub fn check_singbox(&self) -> Result<()> {
+        let binary = self.singbox();
+        if !binary.exists() {
+            bail!("hiddify-sing-box binary is missing at {}", binary.display());
+        }
+        Ok(())
     }
+
+    pub fn version(&self) -> Result<String> {
+        version_of(&self.xray()).context("run xray version")
+    }
+
+    pub fn singbox_version(&self) -> Result<String> {
+        version_of(&self.singbox()).context("run hiddify-sing-box version")
+    }
+}
+
+fn version_of(binary: &std::path::Path) -> Result<String> {
+    let output = std::process::Command::new(binary).arg("version").output()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    Ok(text.lines().next().unwrap_or("unknown").to_string())
 }

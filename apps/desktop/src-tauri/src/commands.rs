@@ -6,7 +6,7 @@ use crate::subscription::{self, ImportSummary};
 use crate::AppState;
 use serde::Serialize;
 use std::collections::HashMap;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +26,9 @@ pub struct CoreInfo {
     pub available: bool,
     pub xray_path: Option<String>,
     pub xray_version: Option<String>,
+    pub singbox_available: bool,
+    pub singbox_path: Option<String>,
+    pub singbox_version: Option<String>,
     pub assets_dir: Option<String>,
     pub error: Option<String>,
 }
@@ -114,12 +117,17 @@ pub fn log_frontend(level: String, message: String) {
 }
 
 #[tauri::command]
-pub fn import_subscription(
-    state: State<'_, AppState>,
+pub async fn import_subscription(
+    app: AppHandle,
     url: String,
     name: Option<String>,
 ) -> Result<ImportSummary, String> {
-    subscription::import(&state.db, &url, name).map_err(|error| format!("{error:#}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        subscription::import(&state.db, &url, name).map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -144,24 +152,40 @@ pub fn list_servers(
 }
 
 #[tauri::command]
-pub fn refresh_profile(
-    state: State<'_, AppState>,
-    profile_id: String,
+pub async fn import_awg_conf(
+    app: AppHandle,
+    conf: String,
+    name: Option<String>,
 ) -> Result<ImportSummary, String> {
-    let (name, url) = {
-        let db = state
-            .db
-            .lock()
-            .map_err(|_| "database lock poisoned".to_string())?;
-        crate::store::profile_source(&db, &profile_id)
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "подписка не найдена".to_string())?
-    };
-    let url = url
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "URL подписки не сохранён — добавьте её заново".to_string())?;
-    subscription::import_into(&state.db, &url, Some(name), Some(profile_id))
-        .map_err(|error| format!("{error:#}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        subscription::import_awg(&state.db, &conf, name).map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn refresh_profile(app: AppHandle, profile_id: String) -> Result<ImportSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (name, url) = {
+            let db = state
+                .db
+                .lock()
+                .map_err(|_| "database lock poisoned".to_string())?;
+            crate::store::profile_source(&db, &profile_id)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "подписка не найдена".to_string())?
+        };
+        let url = url
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "URL подписки не сохранён — добавьте её заново".to_string())?;
+        subscription::import_into(&state.db, &url, Some(name), Some(profile_id))
+            .map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -174,81 +198,139 @@ pub fn delete_profile(state: State<'_, AppState>, profile_id: String) -> Result<
 }
 
 #[tauri::command]
-pub fn connect_server(
-    state: State<'_, AppState>,
-    server_id: String,
-) -> Result<ConnectionStatus, String> {
-    let sidecars = state
-        .sidecars
-        .as_ref()
-        .ok_or_else(|| "ядра не найдены: запусти scripts/build-sidecars.sh".to_string())?;
+pub async fn connect_server(app: AppHandle, server_id: String) -> Result<ConnectionStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let sidecars = state
+            .sidecars
+            .as_ref()
+            .ok_or_else(|| "ядра не найдены: запусти scripts/build-sidecars.sh".to_string())?;
 
-    let (name, config_text) = {
-        let db = state
-            .db
-            .lock()
-            .map_err(|_| "database lock poisoned".to_string())?;
-        crate::store::server_config(&db, &server_id)
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "сервер не найден".to_string())?
-    };
+        let details = {
+            let db = state
+                .db
+                .lock()
+                .map_err(|_| "database lock poisoned".to_string())?;
+            crate::store::server_details(&db, &server_id)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "сервер не найден".to_string())?
+        };
 
-    let config: serde_json::Value =
-        serde_json::from_str(&config_text).map_err(|error| format!("битый конфиг: {error}"))?;
+        let config: serde_json::Value = serde_json::from_str(&details.full_config_json)
+            .map_err(|error| format!("битый конфиг: {error}"))?;
 
-    let status = core::connect(
-        &state.core,
-        &state.paths,
-        sidecars,
-        &server_id,
-        &name,
-        config,
-    )
-    .map_err(|error| format!("{error:#}"))?;
+        let status = if details.protocol == "awg" {
+            core::connect_singbox(
+                &state.core,
+                &state.paths,
+                sidecars,
+                &server_id,
+                &details.name,
+                config,
+            )
+        } else {
+            core::connect_xray(
+                &state.core,
+                &state.paths,
+                sidecars,
+                &server_id,
+                &details.name,
+                config,
+            )
+        }
+        .map_err(|error| format!("{error:#}"))?;
 
-    let _ = state.set_setting("last.server_id", &server_id);
-    Ok(status)
+        let _ = state.set_setting("last.server_id", &server_id);
+        Ok(status)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn probe_servers(
-    state: State<'_, AppState>,
+pub async fn probe_servers(
+    app: AppHandle,
     timeout_ms: Option<u64>,
     concurrency: Option<u32>,
 ) -> Result<Vec<LatencyResult>, String> {
     let timeout = timeout_ms.unwrap_or(3000);
     let concurrency = concurrency.unwrap_or(8) as usize;
-    ping::probe_all(&state.db, timeout, concurrency).map_err(|error| format!("{error:#}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        ping::probe_all(&state.db, timeout, concurrency).map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn disconnect_core(state: State<'_, AppState>) -> ConnectionStatus {
-    core::disconnect(&state.core)
+pub async fn disconnect_core(app: AppHandle) -> Result<ConnectionStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        Ok(core::disconnect(&state.core))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 pub fn connection_status(state: State<'_, AppState>) -> ConnectionStatus {
-    core::status(&state.core, &state.paths.xray_log)
+    core::status(&state.core, &state.paths)
 }
 
 #[tauri::command]
-pub fn core_info(state: State<'_, AppState>) -> CoreInfo {
-    let Some(sidecars) = state.sidecars.as_ref() else {
-        return CoreInfo {
-            available: false,
-            xray_path: None,
-            xray_version: None,
-            assets_dir: None,
-            error: Some("sidecars not found".to_string()),
-        };
-    };
+pub async fn connection_rtt(app: AppHandle) -> Result<Option<u64>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        core::rtt(&state.core).map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
 
-    let check = sidecars.check();
-    CoreInfo {
-        available: check.is_ok(),
-        xray_path: Some(sidecars.xray().display().to_string()),
-        xray_version: sidecars.version().ok(),
-        assets_dir: Some(sidecars.assets_dir().display().to_string()),
-        error: check.err().map(|error| error.to_string()),
-    }
+#[tauri::command]
+pub async fn core_info(app: AppHandle) -> CoreInfo {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let Some(sidecars) = state.sidecars.as_ref() else {
+            return CoreInfo {
+                available: false,
+                xray_path: None,
+                xray_version: None,
+                singbox_available: false,
+                singbox_path: None,
+                singbox_version: None,
+                assets_dir: None,
+                error: Some("sidecars not found".to_string()),
+            };
+        };
+
+        let check = sidecars.check();
+        let singbox_check = if sidecars.singbox().exists() {
+            sidecars.check_singbox()
+        } else {
+            Err(anyhow::anyhow!("hiddify-sing-box is missing"))
+        };
+        CoreInfo {
+            available: check.is_ok(),
+            xray_path: Some(sidecars.xray().display().to_string()),
+            xray_version: sidecars.version().ok(),
+            singbox_available: singbox_check.is_ok(),
+            singbox_path: Some(sidecars.singbox().display().to_string()),
+            singbox_version: sidecars.singbox_version().ok(),
+            assets_dir: Some(sidecars.assets_dir().display().to_string()),
+            error: check.err().map(|error| error.to_string()),
+        }
+    })
+    .await
+    .unwrap_or_else(|error| CoreInfo {
+        available: false,
+        xray_path: None,
+        xray_version: None,
+        singbox_available: false,
+        singbox_path: None,
+        singbox_version: None,
+        assets_dir: None,
+        error: Some(error.to_string()),
+    })
 }

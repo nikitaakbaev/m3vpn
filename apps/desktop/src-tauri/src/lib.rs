@@ -144,6 +144,7 @@ pub fn run() {
             commands::open_logs_dir,
             commands::log_frontend,
             commands::import_subscription,
+            commands::import_awg_conf,
             commands::list_profiles,
             commands::list_servers,
             commands::delete_profile,
@@ -152,6 +153,7 @@ pub fn run() {
             commands::connect_server,
             commands::disconnect_core,
             commands::connection_status,
+            commands::connection_rtt,
             commands::core_info,
             commands::open_core_dir,
         ])

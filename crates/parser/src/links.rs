@@ -13,8 +13,6 @@ const UNSUPPORTED_SCHEMES: &[&str] = &[
     "tuic",
     "wireguard",
     "wg",
-    "amneziawg",
-    "awg",
     "ssr",
 ];
 
@@ -74,6 +72,8 @@ fn parse_line(line: &str) -> Result<ParsedServer, String> {
         parse_socks(line)
     } else if line.starts_with("http://") || line.starts_with("https://") {
         parse_http(line)
+    } else if line.starts_with("amneziawg://") || line.starts_with("awg://") {
+        parse_awg_link(line)
     } else {
         Err(format!(
             "{}: неизвестная схема",
@@ -290,6 +290,21 @@ fn parse_socks(line: &str) -> Result<ParsedServer, String> {
         "settings": { "servers": [server] }
     });
     Ok(wrap(name, "socks", &host, port, outbound))
+}
+
+fn parse_awg_link(line: &str) -> Result<ParsedServer, String> {
+    let rest = line
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .ok_or_else(|| "awg: bad link".to_string())?;
+    let (payload, name) = split_fragment(rest);
+    let conf = crate::awg::decode_conf_payload(payload)
+        .ok_or_else(|| "awg: bad base64 conf".to_string())?;
+    let mut server = crate::awg::parse_conf(&conf)?;
+    if let Some(name) = name {
+        server.name = name;
+    }
+    Ok(server)
 }
 
 fn parse_http(line: &str) -> Result<ParsedServer, String> {
@@ -555,6 +570,16 @@ mod tests {
             result.servers[0].config["outbounds"][0]["streamSettings"]["network"],
             "ws"
         );
+    }
+
+    #[test]
+    fn parses_amneziawg_link() {
+        let conf = "# Name = Link AWG\n[Interface]\nPrivateKey = AAAA\nAddress = 10.8.0.2/32\n[Peer]\nPublicKey = BBBB\nEndpoint = example.com:51820\nAllowedIPs = 0.0.0.0/0\n";
+        let encoded = URL_SAFE_NO_PAD.encode(conf);
+        let result = parse_lines(&format!("amneziawg://{encoded}#From link"));
+        assert_eq!(result.servers.len(), 1);
+        assert_eq!(result.servers[0].protocol, "awg");
+        assert_eq!(result.servers[0].name, "From link");
     }
 
     #[test]

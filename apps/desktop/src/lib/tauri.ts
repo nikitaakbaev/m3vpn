@@ -22,6 +22,7 @@ export interface Profile {
   lastRefreshAt: number | null;
   createdAt: number;
   hideUrl: boolean;
+  urlPresent: boolean;
 }
 
 export interface Server {
@@ -44,6 +45,7 @@ export interface ConnectionStatus {
   httpPort: number;
   pid: number | null;
   startedAt: number | null;
+  engine: string | null;
   error: string | null;
 }
 
@@ -67,6 +69,9 @@ export interface CoreInfo {
   available: boolean;
   xrayPath: string | null;
   xrayVersion: string | null;
+  singboxAvailable: boolean;
+  singboxPath: string | null;
+  singboxVersion: string | null;
   assetsDir: string | null;
   error: string | null;
 }
@@ -125,6 +130,7 @@ let mockProfiles: Profile[] = [
     lastRefreshAt: now,
     createdAt: now,
     hideUrl: false,
+    urlPresent: true,
   },
 ];
 
@@ -155,6 +161,7 @@ let mockStatus: ConnectionStatus = {
   httpPort: 10811,
   pid: null,
   startedAt: null,
+  engine: null,
   error: null,
 };
 
@@ -209,6 +216,7 @@ export async function importSubscription(url: string, name?: string): Promise<Im
       lastRefreshAt: now,
       createdAt: now,
       hideUrl: false,
+      urlPresent: true,
     };
     mockProfiles = [profile, ...mockProfiles];
     return {
@@ -221,6 +229,48 @@ export async function importSubscription(url: string, name?: string): Promise<Im
     };
   }
   return invoke<ImportSummary>("import_subscription", { url, name: name ?? null });
+}
+
+export async function importAwgConf(conf: string, name?: string): Promise<ImportSummary> {
+  if (!isTauri) {
+    if (!conf.includes("[Interface]")) throw new Error("в тексте не найден AmneziaWG .conf");
+    const profile: Profile = {
+      id: `mock-awg-${Date.now()}`,
+      name: name?.trim() || "AmneziaWG",
+      title: "AmneziaWG",
+      serverCount: 1,
+      updateIntervalHours: 24,
+      userinfo: null,
+      lastRefreshAt: now,
+      createdAt: now,
+      hideUrl: true,
+      urlPresent: false,
+    };
+    mockProfiles = [profile, ...mockProfiles];
+    mockServers = [
+      {
+        id: `${profile.id}:0`,
+        profileId: profile.id,
+        profileName: profile.name,
+        name: profile.name,
+        protocol: "awg",
+        host: "vpn.example.com",
+        port: 51820,
+        enabled: true,
+        latencyMs: null,
+      },
+      ...mockServers,
+    ];
+    return {
+      profileId: profile.id,
+      name: profile.name,
+      title: profile.title,
+      servers: 1,
+      skipped: 0,
+      notes: [],
+    };
+  }
+  return invoke<ImportSummary>("import_awg_conf", { conf, name: name ?? null });
 }
 
 export async function listProfiles(): Promise<Profile[]> {
@@ -284,6 +334,7 @@ export async function connectServer(serverId: string): Promise<ConnectionStatus>
       serverName: server.name,
       pid: 4242,
       startedAt: Math.floor(Date.now() / 1000),
+      engine: server.protocol === "awg" ? "sing-box" : "xray",
       error: null,
     };
     return mockStatus;
@@ -293,7 +344,15 @@ export async function connectServer(serverId: string): Promise<ConnectionStatus>
 
 export async function disconnectCore(): Promise<ConnectionStatus> {
   if (!isTauri) {
-    mockStatus = { ...mockStatus, running: false, serverId: null, serverName: null, pid: null, startedAt: null };
+    mockStatus = {
+      ...mockStatus,
+      running: false,
+      serverId: null,
+      serverName: null,
+      pid: null,
+      startedAt: null,
+      engine: null,
+    };
     return mockStatus;
   }
   return invoke<ConnectionStatus>("disconnect_core");
@@ -304,12 +363,20 @@ export async function connectionStatus(): Promise<ConnectionStatus> {
   return invoke<ConnectionStatus>("connection_status");
 }
 
+export async function connectionRtt(): Promise<number | null> {
+  if (!isTauri) return mockStatus.running ? 42 : null;
+  return invoke<number | null>("connection_rtt");
+}
+
 export async function coreInfo(): Promise<CoreInfo> {
   if (!isTauri) {
     return {
       available: true,
       xrayPath: "/home/user/m3vpn/sidecars/bin/xray",
       xrayVersion: "Xray 26.11.9",
+      singboxAvailable: true,
+      singboxPath: "/home/user/m3vpn/sidecars/bin/hiddify-sing-box",
+      singboxVersion: "hiddify-sing-box 1.13.0.h5",
       assetsDir: "/home/user/m3vpn/sidecars/assets",
       error: null,
     };

@@ -10,6 +10,7 @@ const EMPTY_STATUS: api.ConnectionStatus = {
   httpPort: 0,
   pid: null,
   startedAt: null,
+  engine: null,
   error: null,
 };
 
@@ -20,6 +21,7 @@ interface AppStore {
   servers: api.Server[];
   status: api.ConnectionStatus;
   core: api.CoreInfo | null;
+  rtt: number | null;
   selectedServerId: string | null;
   loaded: boolean;
   busy: boolean;
@@ -37,6 +39,8 @@ interface AppStore {
   connect: (serverId?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   importSubscription: (url: string, name?: string) => Promise<api.ImportSummary>;
+  importAwg: (conf: string, name?: string) => Promise<api.ImportSummary>;
+  measureRtt: () => Promise<void>;
   refreshProfile: (profileId: string) => Promise<api.ImportSummary | null>;
   deleteProfile: (profileId: string) => Promise<void>;
   probeAll: (connectFastest?: boolean, silent?: boolean) => Promise<void>;
@@ -54,6 +58,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   servers: [],
   status: EMPTY_STATUS,
   core: null,
+  rtt: null,
   selectedServerId: null,
   loaded: false,
   busy: false,
@@ -66,8 +71,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   load: async () => {
     try {
-      const [settings, info] = await Promise.all([api.getSettings(), api.getAppInfo()]);
-      set({ settings, info });
+      const [settings, info, core] = await Promise.all([
+        api.getSettings(),
+        api.getAppInfo(),
+        api.coreInfo(),
+      ]);
+      set({ settings, info, core });
       await get().refreshData();
       set({ loaded: true });
     } catch (error) {
@@ -81,18 +90,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   refreshData: async () => {
     try {
-      const [profiles, servers, status, core] = await Promise.all([
+      const [profiles, servers, status] = await Promise.all([
         api.listProfiles(),
         api.listServers(),
         api.connectionStatus(),
-        api.coreInfo(),
       ]);
       const selected = get().selectedServerId;
       const nextSelected =
         selected && servers.some((server) => server.id === selected)
           ? selected
           : servers[0]?.id ?? null;
-      set({ profiles, servers, status, core, selectedServerId: nextSelected });
+      set({ profiles, servers, status, selectedServerId: nextSelected });
     } catch (error) {
       set({ lastError: String(error) });
       void api.logFrontend("error", `failed to refresh data: ${String(error)}`);
@@ -103,6 +111,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const status = await api.connectionStatus();
       set({ status });
+      if (!status.running && get().rtt !== null) {
+        set({ rtt: null });
+      }
       if (status.error) {
         if (status.error !== get().reportedStatusError) {
           set({ lastError: status.error, reportedStatusError: status.error });
@@ -142,6 +153,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         busy: false,
         selectedServerId: target,
         reportedStatusError: null,
+        rtt: null,
       });
       state.notify(`${translate(state.settings["ui.language"] as Lang, "home.on")}: ${status.serverName ?? ""}`);
     } catch (error) {
@@ -154,7 +166,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ busy: true });
     try {
       const status = await api.disconnectCore();
-      set({ status, busy: false, reportedStatusError: null });
+      set({ status, busy: false, reportedStatusError: null, rtt: null });
     } catch (error) {
       set({ busy: false, lastError: String(error) });
     }
@@ -172,6 +184,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // on top of it would duplicate the same message.
       set({ importing: false });
       throw error;
+    }
+  },
+
+  importAwg: async (conf, name) => {
+    set({ importing: true });
+    try {
+      const summary = await api.importAwgConf(conf, name);
+      set({ importing: false });
+      await get().refreshData();
+      return summary;
+    } catch (error) {
+      set({ importing: false });
+      throw error;
+    }
+  },
+
+  measureRtt: async () => {
+    try {
+      const rtt = await api.connectionRtt();
+      set({ rtt });
+    } catch {
+      // RTT is best-effort; a failed probe must not disturb the UI.
     }
   },
 
