@@ -1,0 +1,158 @@
+mod commands;
+mod logging;
+mod paths;
+mod port;
+mod store;
+mod tray;
+
+use logging::LoggingGuard;
+use paths::AppPaths;
+use rusqlite::Connection;
+use std::sync::atomic::AtomicU16;
+use std::sync::Mutex;
+use tauri::{Manager, WindowEvent};
+
+pub struct AppState {
+    pub db: Mutex<Connection>,
+    pub paths: AppPaths,
+    pub _logging: Mutex<Option<LoggingGuard>>,
+    pub proxy_port: AtomicU16,
+}
+
+impl AppState {
+    pub fn setting(&self, key: &str) -> Option<String> {
+        let db = self.db.lock().ok()?;
+        store::get(&db, key).ok().flatten()
+    }
+
+    pub fn setting_bool(&self, key: &str, fallback: bool) -> bool {
+        match self.setting(key).as_deref() {
+            Some("true") | Some("1") | Some("yes") | Some("on") => true,
+            Some("false") | Some("0") | Some("no") | Some("off") => false,
+            _ => fallback,
+        }
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> anyhow::Result<()> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        store::set(&db, key, value)
+    }
+}
+
+pub fn run() {
+    #[cfg(unix)]
+    unsafe {
+        // Keep databases, logs and WAL files private to the user.
+        libc::umask(0o077);
+    }
+
+    let paths = match AppPaths::new() {
+        Ok(paths) => paths,
+        Err(error) => {
+            eprintln!("failed to resolve application paths: {error:#}");
+            std::process::exit(1);
+        }
+    };
+    if let Err(error) = paths.ensure() {
+        eprintln!("failed to create application directories: {error:#}");
+        std::process::exit(1);
+    }
+
+    let logging = match logging::init(&paths.log_dir) {
+        Ok(logging) => logging,
+        Err(error) => {
+            eprintln!("failed to initialize logging: {error:#}");
+            std::process::exit(1);
+        }
+    };
+
+    let conn = match store::open(&paths.db_path) {
+        Ok(conn) => conn,
+        Err(error) => {
+            eprintln!("failed to open database: {error:#}");
+            std::process::exit(1);
+        }
+    };
+
+    let base_port = store::get(&conn, "proxy.port")
+        .ok()
+        .flatten()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(10808);
+    let auto_port = store::get(&conn, "proxy.auto_port")
+        .ok()
+        .flatten()
+        .map(|value| value != "false")
+        .unwrap_or(true);
+    let active_port = if auto_port {
+        port::find_free_port(base_port).unwrap_or(base_port)
+    } else {
+        base_port
+    };
+    let _ = store::set(&conn, "proxy.active_port", &active_port.to_string());
+
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        data_dir = %paths.data_dir.display(),
+        port = active_port,
+        "m3vpn starting"
+    );
+
+    let state = AppState {
+        db: Mutex::new(conn),
+        paths,
+        _logging: Mutex::new(Some(logging)),
+        proxy_port: AtomicU16::new(active_port),
+    };
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            show_main(app);
+        }))
+        .manage(state)
+        .invoke_handler(tauri::generate_handler![
+            commands::get_app_info,
+            commands::get_settings,
+            commands::set_setting,
+            commands::pick_free_port,
+            commands::open_logs_dir,
+            commands::log_frontend,
+        ])
+        .setup(|app| {
+            tray::setup(app)?;
+
+            if app
+                .state::<AppState>()
+                .setting_bool("startup.minimized", false)
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+
+            tracing::info!("application ready");
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.app_handle().state::<AppState>();
+                if state.setting_bool("startup.close_to_tray", true) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+pub fn show_main(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}

@@ -69,7 +69,7 @@
     }
   },
   "geo_assets": {
-    "source": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest",
+    "source": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/202611232203",
     "files": {
       "geoip.dat": {
         "path": "sidecars/assets/geoip.dat",
@@ -86,9 +86,19 @@
   "subscription_probe": {
     "format": "json array of full Xray configs",
     "configs": 58,
-    "protocols": ["vless", "hysteria"],
-    "transports": ["tcp+reality", "xhttp+tls"],
-    "features": ["burstObservatory", "leastLoad balancer", "geosite/geoip routing"],
+    "protocols": [
+      "vless",
+      "hysteria"
+    ],
+    "transports": [
+      "tcp+reality",
+      "xhttp+tls"
+    ],
+    "features": [
+      "burstObservatory",
+      "leastLoad balancer",
+      "geosite/geoip routing"
+    ],
     "note": "Token is stored only in .secrets/subscription.url (0600) and is not part of this file."
   },
   "m0_results": {

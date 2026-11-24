@@ -13,6 +13,7 @@ SING_BOX_REPO="${SING_BOX_REPO:-https://github.com/hiddify/hiddify-sing-box.git}
 SING_BOX_BRANCH="${SING_BOX_BRANCH:-v5}"
 SING_BOX_COMMIT="${SING_BOX_COMMIT:-1267fe6aac8d11f3a562e8feecad11d11f48f965}"
 XRAY_VERSION="${XRAY_VERSION:-v26.11.9}"
+GEO_RELEASE="${GEO_RELEASE:-202611232203}"
 
 mkdir -p "$TOOLS" "$BIN" "$ASSETS"
 
@@ -66,9 +67,15 @@ pin_submodule replace/psiphon-tls     master  3e697502354da72c121c7eb5266f3819bc
 pin_submodule replace/psiphon-quic-go master  c43fd98d13a8b954ef23fd51c68b238a8d8a780e
 
 # The hiddify soar branch exposes Discovery.List() but not Conn.Abort().
+PATCH="$ROOT/patches/0001-soar-abort-fallback.patch"
 if grep -q 'c.Conn.Abort()' "$SRC/protocol/hiddify/soar/outbound.go" 2>/dev/null; then
-  sed -i 's/c\.Conn\.Abort()/c.Conn.Close()/' "$SRC/protocol/hiddify/soar/outbound.go"
-  echo "patched: soar Conn.Abort -> Conn.Close"
+  if git -C "$SRC" apply --check "$PATCH" 2>/dev/null; then
+    git -C "$SRC" apply "$PATCH"
+    echo "patched: soar Conn.Abort -> Conn.Close"
+  else
+    sed -i 's/c\.Conn\.Abort()/c.Conn.Close()/' "$SRC/protocol/hiddify/soar/outbound.go"
+    echo "patched (fallback sed): soar Conn.Abort -> Conn.Close"
+  fi
 fi
 
 # --- build -----------------------------------------------------------------
@@ -96,9 +103,26 @@ fi
 for f in geoip.dat geosite.dat; do
   if [ ! -f "$ASSETS/$f" ]; then
     curl -fL --retry 3 -o "$ASSETS/$f" \
-      "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/$f"
+      "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${GEO_RELEASE}/$f"
   fi
 done
 
 echo "--- sha256 ---"
 sha256sum "$BIN/hiddify-sing-box" "$BIN/xray" "$ASSETS/geoip.dat" "$ASSETS/geosite.dat"
+
+if [ -f "$ROOT/sidecars/versions.json" ] && command -v jq >/dev/null 2>&1; then
+  verify() {
+    local path="$1" key="$2"
+    local expected actual
+    expected="$(jq -r "$key" "$ROOT/sidecars/versions.json")"
+    actual="$(sha256sum "$path" | cut -d' ' -f1)"
+    if [ "$actual" != "$expected" ]; then
+      echo "warning: sha256 differs for $path (pinned $expected, actual $actual)" >&2
+      return 1
+    fi
+  }
+  verify "$BIN/xray" '.xray.binary.sha256' || true
+  verify "$ASSETS/geoip.dat" '.geo_assets.files["geoip.dat"].sha256' || true
+  verify "$ASSETS/geosite.dat" '.geo_assets.files["geosite.dat"].sha256' || true
+  verify "$BIN/hiddify-sing-box" '.sing_box.binary.sha256' || true
+fi

@@ -1,0 +1,12 @@
+diff --git a/protocol/hiddify/soar/outbound.go b/protocol/hiddify/soar/outbound.go
+--- a/protocol/hiddify/soar/outbound.go
++++ b/protocol/hiddify/soar/outbound.go
+@@ -424,7 +424,7 @@ type abortOnClose struct {
+ }
+ 
+ func (c *abortOnClose) Close() error {
+-	return c.Conn.Abort()
++	return c.Conn.Close()
+ }
+ 
+ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
