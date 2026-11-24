@@ -38,6 +38,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
   const probeAll = useAppStore((state) => state.probeAll);
   const probing = useAppStore((state) => state.probing);
   const busy = useAppStore((state) => state.busy);
+  const settings = useAppStore((state) => state.settings);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortMode>("group");
 
@@ -75,6 +76,46 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
     return [...map.entries()];
   }, [ordered]);
 
+  const pingMode = settings["ping.protocol"] ?? "incy";
+  const pingDisplay = settings["ping.display"] ?? "both";
+  const pingLabelKey =
+    pingMode === "tcp"
+      ? "servers.tcpPing"
+      : pingMode === "proxy_get"
+        ? "servers.pingGet"
+        : pingMode === "proxy_head"
+          ? "servers.pingHead"
+          : "servers.pingIncy";
+
+  const renderLatency = (server: Server) => {
+    const ms = server.latencyMs;
+    const cls = latencyClass(ms);
+    const label = ms === null ? "—" : `${ms} ms`;
+    const percent =
+      ms === null ? 0 : Math.max(8, Math.min(100, 100 - Math.min(ms, 600) / 6));
+    if (pingDisplay === "dots") {
+      return <span className={`latency-dot ${cls}`} title={label} aria-label={label} />;
+    }
+    if (pingDisplay === "scale") {
+      return (
+        <span className={`latency-bar ${cls}`} title={label} aria-label={label}>
+          <span style={{ width: `${percent}%` }} />
+        </span>
+      );
+    }
+    if (pingDisplay === "both") {
+      return (
+        <span className="latency-cell">
+          <span className={`latency-bar ${cls}`} aria-hidden="true">
+            <span style={{ width: `${percent}%` }} />
+          </span>
+          <span className={`latency ${cls}`}>{label}</span>
+        </span>
+      );
+    }
+    return <span className={`latency ${cls}`}>{label}</span>;
+  };
+
   const renderRow = (server: Server) => {
     const selected = server.id === selectedServerId;
     const connected = connectedServerId === server.id;
@@ -99,12 +140,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             </span>
           </span>
         </button>
-        <span
-          className={`latency ${latencyClass(server.latencyMs)}`}
-          title={t("servers.tcpPing")}
-        >
-          {server.latencyMs !== null ? `${server.latencyMs} ms` : "—"}
-        </span>
+        {renderLatency(server)}
         <Button
           variant={connected ? "tonal" : "outlined"}
           icon={connected ? "stop_circle" : "play_arrow"}
@@ -129,7 +165,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
       <PageHeader
         title={t("servers.title")}
         subtitle={t("servers.subtitle")}
-        badge={<span className="pill pill--accent">M8</span>}
+        badge={<span className="pill pill--accent">M9</span>}
         actions={
           <>
             <Button variant="text" icon="refresh" onClick={() => void refreshData()}>
@@ -190,7 +226,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             onChange={(value) => setSort(value as SortMode)}
           />
           <div className="toolbar-actions">
-            <span className="muted toolbar-note">{t("servers.tcpPing")}</span>
+            <span className="muted toolbar-note">{t(pingLabelKey)}</span>
             <Button
               variant="tonal"
               icon={probing ? "progress_activity" : "speed"}

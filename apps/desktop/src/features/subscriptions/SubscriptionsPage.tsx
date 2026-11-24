@@ -73,7 +73,7 @@ export function SubscriptionsPage() {
       <PageHeader
         title={t("subs.title")}
         subtitle={t("subs.subtitle")}
-        badge={<span className="pill pill--accent">M8</span>}
+        badge={<span className="pill pill--accent">M9</span>}
         actions={
           <Button icon="add_link" onClick={openDialog}>
             {t("subs.add")}

@@ -12,6 +12,8 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("ping.enabled", "true"),
     ("ping.interval_sec", "60"),
     ("ping.url", "https://www.gstatic.com/generate_204"),
+    ("ping.protocol", "incy"),
+    ("ping.display", "both"),
     ("ping.timeout_ms", "3000"),
     ("ping.concurrency", "4"),
     ("ping.samples", "3"),
@@ -163,6 +165,26 @@ fn seed(conn: &Connection) -> Result<()> {
         set(conn, "ui.theme", "dark")?;
         set(conn, "ui.seed_color", "#22C55E")?;
         set(conn, "ui.theme_migrated", "1")?;
+    }
+    // The first palette used muddy, low-contrast swatches. Move those exact
+    // values to their vivid equivalents while keeping custom user colors.
+    if get(conn, "ui.palette_v2")?.is_none() {
+        let seed = get(conn, "ui.seed_color")?
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let vivid = match seed.as_str() {
+            "#4f6f52" => Some("#22C55E"),
+            "#3f5f8a" => Some("#2563EB"),
+            "#7a4e8c" => Some("#7C3AED"),
+            "#8a4e3f" => Some("#EA580C"),
+            "#2f6f6b" => Some("#0F766E"),
+            "#6b5b2f" => Some("#CA8A04"),
+            _ => None,
+        };
+        if let Some(vivid) = vivid {
+            set(conn, "ui.seed_color", vivid)?;
+        }
+        set(conn, "ui.palette_v2", "1")?;
     }
 
     // The first auto-switch tuning was too conservative for real TCP latencies

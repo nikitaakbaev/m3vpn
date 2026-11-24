@@ -25,6 +25,9 @@
 - **M8 — готово.** Полные конфиги без пропусков: Hysteria 2 через sing-box,
   импорт JSON/share-ссылок из UI, автоматический выбор Xray или sing-box,
   переключение ядер. См. [`docs/m8-report.md`](docs/m8-report.md).
+- **M9 — готово.** INGY Ping (реальный HTTP GET через прокси), настройки
+  отображения пинга, новая палитра, Arch-пакет, portable tar.gz, `.desktop`,
+  иконки и AppStream. См. [`docs/m9-report.md`](docs/m9-report.md).
 
 ## Структура
 
@@ -48,6 +51,20 @@ bash scripts/check-sidecars.sh
 cd apps/desktop
 npm install
 npm run tauri dev
+```
+
+Сборка Arch-пакета и portable-архива:
+
+```bash
+bash scripts/package-arch.sh
+sudo pacman -U dist/m3vpn-0.1.0-1-x86_64.pkg.tar.zst
+```
+
+Пакет ставит приложение, sidecars, helper, `.desktop`, иконки и AppStream.
+После установки для TUN нужно войти в группу `m3vpn` и перелогиниться:
+
+```bash
+sudo usermod -aG m3vpn "$USER"
 ```
 
 Импорт подписки без UI (в ту же SQLite, что использует приложение):

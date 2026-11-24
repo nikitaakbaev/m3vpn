@@ -132,6 +132,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "ping.enabled": "true",
   "ping.interval_sec": "60",
   "ping.url": "https://www.gstatic.com/generate_204",
+  "ping.protocol": "incy",
+  "ping.display": "both",
   "ping.timeout_ms": "3000",
   "ping.concurrency": "4",
   "ping.samples": "3",
@@ -165,7 +167,7 @@ const mockInfo: AppInfo = {
   dataDir: "~/.local/share/m3vpn",
   logDir: "~/.local/share/m3vpn/logs",
   proxyPort: 10810,
-  helperAvailable: false,
+  helperAvailable: true,
 };
 
 let mockProfiles: Profile[] = [
@@ -213,7 +215,7 @@ mockServers.push({
   host: "149.33.14.60",
   port: 8443,
   enabled: true,
-  latencyMs: null,
+  latencyMs: 118,
 });
 
 let mockStatus: ConnectionStatus = {
@@ -458,16 +460,21 @@ export async function refreshProfile(profileId: string): Promise<ImportSummary> 
   return invoke<ImportSummary>("refresh_profile", { profileId });
 }
 
-export async function probeServers(timeoutMs = 3000, concurrency = 8): Promise<LatencyResult[]> {
+export async function probeServers(
+  timeoutMs = 3000,
+  concurrency = 4,
+  mode = "incy",
+  testUrl = "https://www.gstatic.com/generate_204",
+): Promise<LatencyResult[]> {
   if (!isTauri) {
     const results: LatencyResult[] = mockServers.map((server, index) => {
-      const latency = 32 + index * 19 + Math.round(Math.random() * 12);
+      const latency = 32 + index * 12 + Math.round(Math.random() * 9);
       server.latencyMs = latency;
       return { serverId: server.id, latencyMs: latency, ok: true, error: null };
     });
     return results;
   }
-  return invoke<LatencyResult[]>("probe_servers", { timeoutMs, concurrency });
+  return invoke<LatencyResult[]>("probe_servers", { timeoutMs, concurrency, mode, testUrl });
 }
 
 export async function deleteProfile(profileId: string): Promise<void> {

@@ -227,7 +227,19 @@ pub fn cli_probe() -> anyhow::Result<(usize, usize)> {
     let paths = AppPaths::new()?;
     paths.ensure()?;
     let conn = store::open(&paths.db_path)?;
-    let results = ping::probe_all(&Mutex::new(conn), 3000, 8)?;
+    let mode = ping::PingMode::from_setting(
+        &store::get(&conn, "ping.protocol")?.unwrap_or_else(|| "incy".to_string()),
+    );
+    let test_url = store::get(&conn, "ping.url")?.unwrap_or_default();
+    let timeout = store::get(&conn, "ping.timeout_ms")?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(3000);
+    let concurrency = store::get(&conn, "ping.concurrency")?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(4);
+    let options = ping::PingOptions::new(mode, &test_url, timeout, concurrency);
+    let sidecars = Sidecars::discover().ok();
+    let results = ping::probe_all(&Mutex::new(conn), &options, Some(&paths), sidecars.as_ref())?;
     let ok = results.iter().filter(|result| result.ok).count();
     Ok((ok, results.len()))
 }

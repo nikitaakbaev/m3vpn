@@ -9,3 +9,8 @@
 apps/desktop/src-tauri/gen
 *.log
 .DS_Store
+/packaging/arch/stage/
+/packaging/arch/src/
+/packaging/arch/pkg/
+/packaging/arch/*.pkg.tar.*
+/packaging/arch/helper-target/

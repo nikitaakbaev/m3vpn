@@ -8,7 +8,13 @@ import { Icon } from "../../components/Icon";
 import { useAppStore, useT } from "../../store/useAppStore";
 import type { ThemeMode } from "../../theme";
 
-const SWATCHES = ["#4F6F52", "#3F5F8A", "#7A4E8C", "#8A4E3F", "#2F6F6B", "#6B5B2F"];
+const SWATCHES = ["#22C55E", "#2563EB", "#7C3AED", "#EA580C", "#0F766E", "#CA8A04"];
+
+const PING_PRESETS = [
+  { key: "google", url: "https://www.gstatic.com/generate_204" },
+  { key: "cloudflare", url: "https://cp.cloudflare.com/generate_204" },
+  { key: "apple", url: "https://captive.apple.com/hotspot-detect.html" },
+] as const;
 
 export function SettingsPage() {
   const t = useT();
@@ -35,6 +41,24 @@ export function SettingsPage() {
     Number(settings["select.tolerance_ratio"] ?? "0.3") * 100,
   );
   const autoWins = Number(settings["select.wins_required"] ?? "2");
+  const pingProtocol = settings["ping.protocol"] ?? "incy";
+  const pingDisplay = settings["ping.display"] ?? "both";
+  const pingUrl = settings["ping.url"] ?? "https://www.gstatic.com/generate_204";
+  const pingTimeoutSec = Math.max(
+    1,
+    Math.round(Number(settings["ping.timeout_ms"] ?? "3000") / 1000),
+  );
+  const pingHintKey =
+    pingProtocol === "tcp"
+      ? "settings.pingTcpHint"
+      : pingProtocol === "incy"
+        ? "settings.pingIncyHint"
+        : "settings.pingProxyHint";
+
+  const changePingTimeout = (delta: number) => {
+    const next = Math.max(1, Math.min(10, pingTimeoutSec + delta));
+    void set("ping.timeout_ms", String(next * 1000));
+  };
 
   const saveNumber = (key: string, value: string, min: number, max: number) => {
     const parsed = Number(value);
@@ -47,7 +71,7 @@ export function SettingsPage() {
       <PageHeader
         title={t("settings.title")}
         subtitle={t("settings.subtitle")}
-        badge={<span className="pill pill--accent">M8</span>}
+        badge={<span className="pill pill--accent">M9</span>}
       />
 
       <div className="settings-grid">
@@ -213,6 +237,45 @@ export function SettingsPage() {
             />
           </div>
 
+          <div className="settings-row settings-row--column">
+            <div className="settings-row__text">
+              <strong>{t("settings.pingProtocol")}</strong>
+              <span>{t(pingHintKey)}</span>
+            </div>
+            <div className="settings-segmented">
+              <Segmented
+                value={pingProtocol}
+                label={t("settings.pingProtocol")}
+                options={[
+                  { value: "incy", label: t("settings.pingIncy") },
+                  { value: "tcp", label: t("settings.pingTcp") },
+                  { value: "proxy_get", label: t("settings.pingGet") },
+                  { value: "proxy_head", label: t("settings.pingHead") },
+                ]}
+                onChange={(value) => void set("ping.protocol", value)}
+              />
+            </div>
+          </div>
+
+          <div className="settings-row settings-row--column">
+            <div className="settings-row__text">
+              <strong>{t("settings.pingDisplay")}</strong>
+            </div>
+            <div className="settings-segmented">
+              <Segmented
+                value={pingDisplay}
+                label={t("settings.pingDisplay")}
+                options={[
+                  { value: "numbers", label: t("settings.pingNumbers") },
+                  { value: "scale", label: t("settings.pingScale") },
+                  { value: "both", label: t("settings.pingBoth") },
+                  { value: "dots", label: t("settings.pingDots") },
+                ]}
+                onChange={(value) => void set("ping.display", value)}
+              />
+            </div>
+          </div>
+
           <div className="settings-row">
             <div className="settings-row__text">
               <strong>{t("settings.interval")}</strong>
@@ -233,13 +296,49 @@ export function SettingsPage() {
             <input
               className="m3-input"
               type="url"
-              defaultValue={settings["ping.url"] ?? ""}
+              value={pingUrl}
+              onChange={(event) => void set("ping.url", event.target.value)}
               onBlur={(event) => {
                 void set("ping.url", event.target.value.trim());
                 notify(t("snackbar.saved"));
               }}
             />
           </Field>
+
+          <div className="ping-presets" role="group" aria-label={t("settings.pingPresets")}>
+            {PING_PRESETS.map((preset) => {
+              const active = pingUrl === preset.url;
+              return (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={`ping-preset${active ? " is-active" : ""}`}
+                  onClick={() => void set("ping.url", preset.url)}
+                >
+                  <span>{t(`settings.pingPreset.${preset.key}`)}</span>
+                  {active ? <Icon name="check" size={17} /> : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.pingTimeout")}</strong>
+              <span>{t("settings.pingTimeoutHint")}</span>
+            </div>
+            <div className="stepper">
+              <button type="button" aria-label="−" onClick={() => changePingTimeout(-1)}>
+                −
+              </button>
+              <span>
+                {pingTimeoutSec} {t("settings.secondsShort")}
+              </span>
+              <button type="button" aria-label="+" onClick={() => changePingTimeout(1)}>
+                +
+              </button>
+            </div>
+          </div>
 
           <div className="settings-row">
             <div className="settings-row__text">
@@ -311,7 +410,6 @@ export function SettingsPage() {
             />
           </div>
           <p className="hint">{t("settings.selectHint")}</p>
-          <p className="hint">{t("settings.pingHint")}</p>
         </Card>
 
         <Card className="settings-card">

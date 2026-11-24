@@ -1,0 +1,16 @@
+pkgname=m3vpn
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Material 3 client for Xray, sing-box, Reality, Hysteria 2 and AmneziaWG"
+arch=('x86_64')
+url="https://github.com/shizunaru/m3vpn"
+license=('custom')
+depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator')
+optdepends=('nftables: kill switch for TUN mode')
+install=m3vpn.install
+options=(!strip !debug)
+source=()
+
+package() {
+  cp -a "$startdir/stage/." "$pkgdir/"
+}

@@ -39,7 +39,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
       <PageHeader
         title={t("home.title")}
         subtitle={t("home.subtitle")}
-        badge={<span className="pill pill--accent">M8</span>}
+        badge={<span className="pill pill--accent">M9</span>}
         actions={
           <Button variant="outlined" icon="dns" onClick={() => onNavigate("servers")}>
             {t("home.openServers")}
@@ -78,7 +78,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
                   </span>
                 ) : selected?.latencyMs !== null && selected?.latencyMs !== undefined ? (
                   <span>
-                    <Icon name="speed" size={16} /> {t("home.tcp")} {selected.latencyMs} ms
+                    <Icon name="speed" size={16} /> {t("home.ping")} {selected.latencyMs} ms
                   </span>
                 ) : null}
               </div>

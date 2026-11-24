@@ -288,11 +288,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (get().probing || get().busy) return;
     set({ probing: true });
     try {
-      const timeout = Number(get().settings["ping.timeout_ms"] ?? "3000");
-      const concurrency = Number(get().settings["ping.concurrency"] ?? "8");
+      const settings = get().settings;
+      const timeout = Number(settings["ping.timeout_ms"] ?? "3000");
+      const concurrency = Number(settings["ping.concurrency"] ?? "4");
       const results = await api.probeServers(
         Number.isFinite(timeout) ? timeout : 3000,
-        Number.isFinite(concurrency) ? concurrency : 8,
+        Number.isFinite(concurrency) ? concurrency : 4,
+        settings["ping.protocol"] ?? "incy",
+        settings["ping.url"] ?? "https://www.gstatic.com/generate_204",
       );
       await get().refreshData();
       const best = results

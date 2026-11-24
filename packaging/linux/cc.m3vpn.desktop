@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=m3vpn
+GenericName=Proxy Client
+Comment=Material 3 client for Xray, sing-box, Reality, Hysteria 2 and AmneziaWG
+Exec=m3vpn
+Icon=cc.m3vpn.desktop
+Terminal=false
+Categories=Network;
+Keywords=vpn;proxy;xray;sing-box;reality;hysteria;amneziawg;
+StartupWMClass=m3vpn

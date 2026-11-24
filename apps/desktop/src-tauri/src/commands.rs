@@ -1,5 +1,5 @@
 use crate::core::{self, ConnectionStatus};
-use crate::ping::{self, LatencyResult};
+use crate::ping::{self, LatencyResult, PingMode, PingOptions};
 use crate::port;
 use crate::routing::{self, GeoStatus, RoutingSummary};
 use crate::store::{ProfileRow, ServerRow};
@@ -309,12 +309,18 @@ pub async fn probe_servers(
     app: AppHandle,
     timeout_ms: Option<u64>,
     concurrency: Option<u32>,
+    mode: Option<String>,
+    test_url: Option<String>,
 ) -> Result<Vec<LatencyResult>, String> {
     let timeout = timeout_ms.unwrap_or(3000);
-    let concurrency = concurrency.unwrap_or(8) as usize;
+    let concurrency = concurrency.unwrap_or(4) as usize;
+    let mode = PingMode::from_setting(mode.as_deref().unwrap_or("incy"));
+    let options = PingOptions::new(mode, &test_url.unwrap_or_default(), timeout, concurrency);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        ping::probe_all(&state.db, timeout, concurrency).map_err(|error| format!("{error:#}"))
+        let sidecars = state.sidecars.clone();
+        ping::probe_all(&state.db, &options, Some(&state.paths), sidecars.as_ref())
+            .map_err(|error| format!("{error:#}"))
     })
     .await
     .map_err(|error| error.to_string())?

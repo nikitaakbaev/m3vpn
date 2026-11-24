@@ -48,6 +48,24 @@ function kebab(value: string): string {
   return value.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
 }
 
+function channel(value: number): number {
+  const srgb = value / 255;
+  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+// Filled buttons and switch thumbs need readable text on any seed. Comparing
+// WCAG contrast against black and white avoids the old fixed dark-green ink.
+function readableInk(hex: string): string {
+  const argb = argbFromHex(hex);
+  const red = channel((argb >> 16) & 0xff);
+  const green = channel((argb >> 8) & 0xff);
+  const blue = channel(argb & 0xff);
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  const white = 1.05 / (luminance + 0.05);
+  const black = (luminance + 0.05) / 0.05;
+  return white >= black ? "#FFFFFF" : "#07130B";
+}
+
 export function isDarkMode(mode: ThemeMode): boolean {
   if (mode === "dark") return true;
   if (mode === "light") return false;
@@ -97,6 +115,7 @@ export function applyTheme(seed: string, mode: ThemeMode): void {
   }
 
   root.style.setProperty("--m3-accent", seed);
+  root.style.setProperty("--m3-accent-ink", readableInk(seed));
   root.style.setProperty("color-scheme", dark ? "dark" : "light");
   root.dataset.theme = dark ? "dark" : "light";
   root.dataset.seed = seed;
