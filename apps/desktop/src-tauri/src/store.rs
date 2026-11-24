@@ -33,6 +33,8 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("startup.minimized", "false"),
     ("startup.close_to_tray", "true"),
     ("telemetry.enabled", "false"),
+    ("routing.active_profile_id", ""),
+    ("routing.geo_update_hours", "24"),
 ];
 
 pub fn open(path: &Path) -> Result<Db> {

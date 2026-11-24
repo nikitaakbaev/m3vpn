@@ -301,6 +301,13 @@ fn connect_backend(
     let (binary, config_path, log_path, extra_env) = match engine {
         Engine::Xray => {
             sidecars.check()?;
+            let assets = if paths.geo_dir.join("geoip.dat").exists()
+                && paths.geo_dir.join("geosite.dat").exists()
+            {
+                paths.geo_dir.clone()
+            } else {
+                sidecars.assets_dir()
+            };
             xray::patch(
                 &mut config,
                 slot_socks,
@@ -313,7 +320,7 @@ fn connect_backend(
                 sidecars.xray(),
                 paths.xray_config.clone(),
                 paths.xray_log.clone(),
-                Some(("XRAY_LOCATION_ASSET", sidecars.assets_dir())),
+                Some(("XRAY_LOCATION_ASSET", assets)),
             )
         }
         Engine::SingBox => {
@@ -707,6 +714,7 @@ mod tests {
             singbox_log: root.join("core/singbox.log"),
             front_config: root.join("core/front.json"),
             front_log: root.join("core/front.log"),
+            geo_dir: root.join("geo"),
         }
     }
 

@@ -1,6 +1,7 @@
 use crate::core::{self, ConnectionStatus};
 use crate::ping::{self, LatencyResult};
 use crate::port;
+use crate::routing::{self, GeoStatus, RoutingSummary};
 use crate::store::{ProfileRow, ServerRow};
 use crate::subscription::{self, ImportSummary};
 use crate::AppState;
@@ -236,8 +237,25 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
                 .ok_or_else(|| "сервер не найден".to_string())?
         };
 
-        let config: serde_json::Value = serde_json::from_str(&details.full_config_json)
+        let mut config: serde_json::Value = serde_json::from_str(&details.full_config_json)
             .map_err(|error| format!("битый конфиг: {error}"))?;
+
+        let active_profile = {
+            let db = state
+                .db
+                .lock()
+                .map_err(|_| "database lock poisoned".to_string())?;
+            routing::active(&db).map_err(|error| error.to_string())?
+        };
+        if let Some((_, profile)) = active_profile {
+            if details.protocol == "awg" {
+                routing::apply_singbox(&mut config, &profile)
+                    .map_err(|error| format!("маршрутизация: {error:#}"))?;
+            } else {
+                routing::apply_xray(&mut config, &profile)
+                    .map_err(|error| format!("маршрутизация: {error:#}"))?;
+            }
+        }
 
         let mut status = if details.protocol == "awg" {
             core::connect_singbox(
@@ -323,6 +341,212 @@ pub async fn disconnect_core(app: AppHandle) -> Result<ConnectionStatus, String>
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn list_routing_profiles(state: State<'_, AppState>) -> Result<Vec<RoutingSummary>, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())?;
+    routing::list_profiles(&db).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn import_routing_profile(
+    app: AppHandle,
+    text: String,
+    name: Option<String>,
+) -> Result<RoutingSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (mut profile, raw, source_url) =
+            routing::parse_profile(&text).map_err(|error| format!("{error:#}"))?;
+        if let Some(name) = name.filter(|name| !name.trim().is_empty()) {
+            profile.name = name.trim().to_string();
+        }
+        let db = state
+            .db
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
+        let id = routing::save(&db, None, &profile, &raw, source_url)
+            .map_err(|error| format!("{error:#}"))?;
+        routing::list_profiles(&db)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| "профиль не сохранился".to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_routing_profile(
+    app: AppHandle,
+    id: Option<String>,
+    profile_json: String,
+    name: Option<String>,
+) -> Result<RoutingSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (mut profile, raw, source_url) =
+            routing::parse_profile(&profile_json).map_err(|error| format!("{error:#}"))?;
+        if let Some(name) = name.filter(|name| !name.trim().is_empty()) {
+            profile.name = name.trim().to_string();
+        }
+        let db = state
+            .db
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
+        let saved = routing::save(&db, id.as_deref(), &profile, &raw, source_url)
+            .map_err(|error| format!("{error:#}"))?;
+        routing::list_profiles(&db)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .find(|item| item.id == saved)
+            .ok_or_else(|| "профиль не сохранился".to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn delete_routing_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())?;
+    routing::delete(&db, &id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn activate_routing_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())?;
+    routing::set_active(&db, &id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn refresh_routing_geo(
+    app: AppHandle,
+    profile_id: Option<String>,
+) -> Result<GeoStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let id = match profile_id {
+            Some(id) => id,
+            None => state
+                .setting("routing.active_profile_id")
+                .filter(|id| !id.is_empty())
+                .ok_or_else(|| "активный профиль не выбран".to_string())?,
+        };
+        let profile = {
+            let db = state
+                .db
+                .lock()
+                .map_err(|_| "database lock poisoned".to_string())?;
+            routing::get(&db, &id)
+                .map_err(|error| error.to_string())?
+                .map(|(profile, _)| profile)
+                .ok_or_else(|| "профиль не найден".to_string())?
+        };
+        let status =
+            routing::update_geo(&state.paths, &profile).map_err(|error| format!("{error:#}"))?;
+        let hours = geo_hours(&state);
+        let db = state
+            .db
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
+        routing::record_geo_check(
+            &db,
+            &id,
+            status.checked_at,
+            next_geo_check(status.checked_at, hours),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(status)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn refresh_routing_geo_if_due(app: AppHandle) -> Result<Option<GeoStatus>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let id = match state.setting("routing.active_profile_id") {
+            Some(id) if !id.is_empty() => id,
+            _ => return Ok(None),
+        };
+        let hours = geo_hours(&state);
+        if hours <= 0 {
+            return Ok(None);
+        }
+        let due = {
+            let db = state
+                .db
+                .lock()
+                .map_err(|_| "database lock poisoned".to_string())?;
+            routing::geo_due(&db, &id, now_secs()).map_err(|error| error.to_string())?
+        };
+        if !due {
+            return Ok(None);
+        }
+        let profile = {
+            let db = state
+                .db
+                .lock()
+                .map_err(|_| "database lock poisoned".to_string())?;
+            routing::get(&db, &id)
+                .map_err(|error| error.to_string())?
+                .map(|(profile, _)| profile)
+                .ok_or_else(|| "профиль не найден".to_string())?
+        };
+        let status =
+            routing::update_geo(&state.paths, &profile).map_err(|error| format!("{error:#}"))?;
+        let db = state
+            .db
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
+        routing::record_geo_check(
+            &db,
+            &id,
+            status.checked_at,
+            next_geo_check(status.checked_at, hours),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(Some(status))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn geo_hours(state: &AppState) -> i64 {
+    state
+        .setting("routing.geo_update_hours")
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|hours| *hours >= 0)
+        .unwrap_or(24)
+}
+
+// `0` disables automatic checks. A manual refresh still works, but must not
+// make the profile look due on every startup check.
+fn next_geo_check(checked_at: i64, hours: i64) -> i64 {
+    if hours <= 0 {
+        checked_at + 10 * 365 * 24 * 3600
+    } else {
+        checked_at + hours * 3600
+    }
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 #[tauri::command]

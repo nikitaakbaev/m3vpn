@@ -22,6 +22,8 @@ interface AppStore {
   servers: api.Server[];
   status: api.ConnectionStatus;
   core: api.CoreInfo | null;
+  routingProfiles: api.RoutingSummary[];
+  routingBusy: boolean;
   rtt: number | null;
   selectedServerId: string | null;
   loaded: boolean;
@@ -50,6 +52,13 @@ interface AppStore {
   pickPort: () => Promise<void>;
   openLogs: () => Promise<void>;
   openCoreDir: () => Promise<void>;
+  loadRouting: () => Promise<void>;
+  importRouting: (text: string, name?: string) => Promise<api.RoutingSummary | null>;
+  saveRouting: (id: string | null, json: string, name?: string) => Promise<api.RoutingSummary | null>;
+  deleteRouting: (id: string) => Promise<void>;
+  activateRouting: (id: string) => Promise<void>;
+  refreshGeo: (profileId?: string) => Promise<void>;
+  checkGeoUpdate: () => Promise<void>;
   notify: (message: string) => void;
   clearError: () => void;
 }
@@ -61,6 +70,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   servers: [],
   status: EMPTY_STATUS,
   core: null,
+  routingProfiles: [],
+  routingBusy: false,
   rtt: null,
   selectedServerId: null,
   loaded: false,
@@ -84,6 +95,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({ settings, info, core });
       await get().refreshData();
       set({ loaded: true });
+      void get().loadRouting();
+      void get().checkGeoUpdate();
     } catch (error) {
       set({
         loaded: true,
@@ -381,6 +394,112 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await api.openCoreDir();
     } catch (error) {
       set({ lastError: String(error) });
+    }
+  },
+
+  loadRouting: async () => {
+    try {
+      const routingProfiles = await api.listRoutingProfiles();
+      set({ routingProfiles });
+    } catch (error) {
+      set({ lastError: String(error) });
+    }
+  },
+
+  importRouting: async (text, name) => {
+    set({ routingBusy: true });
+    try {
+      const profile = await api.importRoutingProfile(text, name);
+      await get().loadRouting();
+      get().notify(`${translate(get().settings["ui.language"] as Lang, "routing.imported")}: ${profile.name}`);
+      return profile;
+    } catch (error) {
+      set({ lastError: String(error) });
+      return null;
+    } finally {
+      set({ routingBusy: false });
+    }
+  },
+
+  saveRouting: async (id, json, name) => {
+    set({ routingBusy: true });
+    try {
+      const profile = await api.saveRoutingProfile(id, json, name);
+      await get().loadRouting();
+      const state = get();
+      const reapply =
+        profile.active && state.status.running && state.status.serverId
+          ? state.status.serverId
+          : null;
+      get().notify(translate(get().settings["ui.language"] as Lang, "routing.saved"));
+      if (reapply) await get().connect(reapply);
+      return profile;
+    } catch (error) {
+      set({ lastError: String(error) });
+      return null;
+    } finally {
+      set({ routingBusy: false });
+    }
+  },
+
+  deleteRouting: async (id) => {
+    try {
+      const wasActive = get().routingProfiles.find((profile) => profile.id === id)?.active;
+      await api.deleteRoutingProfile(id);
+      await get().loadRouting();
+      const state = get();
+      if (wasActive && state.status.running && state.status.serverId) {
+        await get().connect(state.status.serverId);
+      }
+      get().notify(translate(get().settings["ui.language"] as Lang, "routing.deleted"));
+    } catch (error) {
+      set({ lastError: String(error) });
+    }
+  },
+
+  activateRouting: async (id) => {
+    try {
+      await api.activateRoutingProfile(id);
+      await get().loadRouting();
+      const state = get();
+      if (state.status.running && state.status.serverId) {
+        await get().connect(state.status.serverId);
+      }
+      get().notify(translate(get().settings["ui.language"] as Lang, "routing.activated"));
+    } catch (error) {
+      set({ lastError: String(error) });
+    }
+  },
+
+  refreshGeo: async (profileId) => {
+    set({ routingBusy: true });
+    try {
+      const status = await api.refreshRoutingGeo(profileId);
+      await get().loadRouting();
+      get().notify(
+        `${translate(get().settings["ui.language"] as Lang, "routing.geoUpdated")}: ${Math.round(
+          (status.geoipBytes + status.geositeBytes) / 1024 / 1024,
+        )} MB`,
+      );
+    } catch (error) {
+      set({ lastError: String(error) });
+    } finally {
+      set({ routingBusy: false });
+    }
+  },
+
+  checkGeoUpdate: async () => {
+    try {
+      const status = await api.refreshRoutingGeoIfDue();
+      if (!status) return;
+      await get().loadRouting();
+      get().notify(
+        `${translate(get().settings["ui.language"] as Lang, "routing.geoUpdated")}: ${Math.round(
+          (status.geoipBytes + status.geositeBytes) / 1024 / 1024,
+        )} MB`,
+      );
+    } catch (error) {
+      void api.logFrontend("warn", `geo update: ${String(error)}`);
     }
   },
 

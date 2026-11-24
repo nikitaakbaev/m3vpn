@@ -51,6 +51,22 @@ export interface ConnectionStatus {
   error: string | null;
 }
 
+export interface RoutingSummary {
+  id: string;
+  name: string;
+  sourceUrl: string | null;
+  lastUpdated: number | null;
+  geoLastCheckAt: number | null;
+  active: boolean;
+  profileJson: string;
+}
+
+export interface GeoStatus {
+  geoipBytes: number;
+  geositeBytes: number;
+  checkedAt: number;
+}
+
 export interface LatencyResult {
   serverId: string;
   latencyMs: number | null;
@@ -80,6 +96,36 @@ export interface CoreInfo {
 
 // Browser mock only. Tauri always loads the persisted values from SQLite
 // (store.rs is the source of truth for the real defaults).
+const now = Math.floor(Date.now() / 1000);
+
+let mockRoutingProfiles: RoutingSummary[] = [
+  {
+    id: "routing-default",
+    name: "Default RU direct",
+    sourceUrl: null,
+    lastUpdated: now,
+    geoLastCheckAt: null,
+    active: true,
+    profileJson: JSON.stringify(
+      {
+        Name: "Default RU direct",
+        GlobalProxy: "true",
+        RemoteDNSType: "DoH",
+        RemoteDNSDomain: "https://cloudflare-dns.com/dns-query",
+        RemoteDNSIP: "1.1.1.1",
+        DomesticDNSType: "DoU",
+        DomesticDNSIP: "8.8.8.8",
+        DirectSites: ["geosite:ru"],
+        DirectIp: ["geoip:ru", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+        BlockSites: ["geosite:category-ads-all"],
+        DomainStrategy: "IPIfNonMatch",
+      },
+      null,
+      2,
+    ),
+  },
+];
+
 export const DEFAULT_SETTINGS: Settings = {
   mode: "proxy",
   "ping.enabled": "true",
@@ -121,7 +167,6 @@ const mockInfo: AppInfo = {
   helperAvailable: false,
 };
 
-const now = Math.floor(Date.now() / 1000);
 let mockProfiles: Profile[] = [
   {
     id: "mock-profile",
@@ -275,6 +320,88 @@ export async function importAwgConf(conf: string, name?: string): Promise<Import
     };
   }
   return invoke<ImportSummary>("import_awg_conf", { conf, name: name ?? null });
+}
+
+export async function listRoutingProfiles(): Promise<RoutingSummary[]> {
+  if (!isTauri) return [...mockRoutingProfiles];
+  return invoke<RoutingSummary[]>("list_routing_profiles");
+}
+
+export async function importRoutingProfile(text: string, name?: string): Promise<RoutingSummary> {
+  if (!isTauri) {
+    const profile: RoutingSummary = {
+      id: `routing-${Date.now()}`,
+      name: name?.trim() || "Imported profile",
+      sourceUrl: null,
+      lastUpdated: now,
+      geoLastCheckAt: null,
+      active: false,
+      profileJson: text.trim().startsWith("{")
+        ? text
+        : JSON.stringify({ Name: name?.trim() || "Imported profile" }, null, 2),
+    };
+    mockRoutingProfiles = [profile, ...mockRoutingProfiles];
+    return profile;
+  }
+  return invoke<RoutingSummary>("import_routing_profile", { text, name: name ?? null });
+}
+
+export async function saveRoutingProfile(
+  id: string | null,
+  profileJson: string,
+  name?: string,
+): Promise<RoutingSummary> {
+  if (!isTauri) {
+    const existing = mockRoutingProfiles.find((profile) => profile.id === id);
+    const profile: RoutingSummary = {
+      id: id ?? `routing-${Date.now()}`,
+      name: name?.trim() || existing?.name || "Profile",
+      sourceUrl: null,
+      lastUpdated: now,
+      geoLastCheckAt: null,
+      active: existing?.active ?? false,
+      profileJson,
+    };
+    mockRoutingProfiles = [profile, ...mockRoutingProfiles.filter((item) => item.id !== profile.id)];
+    return profile;
+  }
+  return invoke<RoutingSummary>("save_routing_profile", { id, profileJson, name: name ?? null });
+}
+
+export async function deleteRoutingProfile(id: string): Promise<void> {
+  if (!isTauri) {
+    mockRoutingProfiles = mockRoutingProfiles.filter((profile) => profile.id !== id);
+    return;
+  }
+  await invoke("delete_routing_profile", { id });
+}
+
+export async function activateRoutingProfile(id: string): Promise<void> {
+  if (!isTauri) {
+    mockRoutingProfiles = mockRoutingProfiles.map((profile) => ({
+      ...profile,
+      active: profile.id === id,
+    }));
+    return;
+  }
+  await invoke("activate_routing_profile", { id });
+}
+
+export async function refreshRoutingGeo(profileId?: string): Promise<GeoStatus> {
+  if (!isTauri) {
+    mockRoutingProfiles = mockRoutingProfiles.map((profile) =>
+      profile.id === profileId || (!profileId && profile.active)
+        ? { ...profile, geoLastCheckAt: now }
+        : profile,
+    );
+    return { geoipBytes: 16_503_149, geositeBytes: 11_531_643, checkedAt: now };
+  }
+  return invoke<GeoStatus>("refresh_routing_geo", { profileId: profileId ?? null });
+}
+
+export async function refreshRoutingGeoIfDue(): Promise<GeoStatus | null> {
+  if (!isTauri) return null;
+  return invoke<GeoStatus | null>("refresh_routing_geo_if_due");
 }
 
 export async function listProfiles(): Promise<Profile[]> {

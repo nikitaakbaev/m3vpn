@@ -2136,3 +2136,68 @@ input[type="number"]::-webkit-inner-spin-button {
     flex: 1;
   }
 }
+
+/* --------------------------------------------------------------- routing */
+
+.routing-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.routing-actions {
+  align-items: center;
+}
+
+.routing-actions__buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.m3-textarea--tall {
+  min-height: 300px;
+}
+
+@media (max-width: 640px) {
+  .routing-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .routing-actions__buttons {
+    width: 100%;
+  }
+
+  .routing-actions__buttons .m3-button {
+    flex: 1;
+  }
+}
+
+.geo-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.geo-controls__interval {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .geo-controls {
+    width: 100%;
+  }
+
+  .geo-controls .m3-button {
+    flex: 1;
+  }
+}

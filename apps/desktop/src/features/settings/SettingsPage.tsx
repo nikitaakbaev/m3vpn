@@ -47,7 +47,7 @@ export function SettingsPage() {
       <PageHeader
         title={t("settings.title")}
         subtitle={t("settings.subtitle")}
-        badge={<span className="pill pill--accent">M6</span>}
+        badge={<span className="pill pill--accent">M7</span>}
       />
 
       <div className="settings-grid">

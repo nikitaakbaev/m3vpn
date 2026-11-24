@@ -40,6 +40,7 @@ export default function App() {
   const probeAll = useAppStore((state) => state.probeAll);
   const measureRtt = useAppStore((state) => state.measureRtt);
   const pollStatus = useAppStore((state) => state.pollStatus);
+  const checkGeoUpdate = useAppStore((state) => state.checkGeoUpdate);
   const t = useT();
   const [page, setPageState] = useState<Page>(pageFromHash);
   const autoTried = useRef(false);
@@ -53,6 +54,13 @@ export default function App() {
     setPageState(next);
     if (window.location.hash !== `#${next}`) window.location.hash = next;
   };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void checkGeoUpdate();
+    }, 6 * 60 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [checkGeoUpdate]);
 
   useEffect(() => {
     const onHashChange = () => setPageState(pageFromHash());

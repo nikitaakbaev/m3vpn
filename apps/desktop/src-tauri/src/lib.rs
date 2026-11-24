@@ -5,6 +5,7 @@ mod logging;
 mod paths;
 mod ping;
 mod port;
+mod routing;
 mod sidecars;
 mod store;
 mod subscription;
@@ -162,11 +163,21 @@ pub fn run() {
             commands::connection_rtt,
             commands::core_info,
             commands::open_core_dir,
+            commands::list_routing_profiles,
+            commands::import_routing_profile,
+            commands::save_routing_profile,
+            commands::delete_routing_profile,
+            commands::activate_routing_profile,
+            commands::refresh_routing_geo,
+            commands::refresh_routing_geo_if_due,
         ])
         .setup(|app| {
             {
                 let state = app.state::<AppState>();
                 if let Some(sidecars) = state.sidecars.as_ref() {
+                    if let Err(error) = routing::ensure_seed_geo(&state.paths, sidecars) {
+                        tracing::warn!(%error, "failed to seed geo assets");
+                    }
                     if let Err(error) = core::start_front(&state.core, &state.paths, sidecars) {
                         tracing::warn!(%error, "front proxy failed to start");
                     }

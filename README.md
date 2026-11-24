@@ -19,6 +19,9 @@
   в direct. См. [`docs/m5-report.md`](docs/m5-report.md).
 - **M6 — готово.** TUN через привилегированный helper, snapshot/restore,
   watchdog и опциональный kill switch. См. [`docs/m6-report.md`](docs/m6-report.md).
+- **M7 — готово.** Профили маршрутизации INCY, direct/proxy/block, DoH/DoU,
+  geoip/geosite, FakeDNS для AWG и автообновление geo. См.
+  [`docs/m7-report.md`](docs/m7-report.md).
 
 ## Структура
 

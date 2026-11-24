@@ -13,6 +13,7 @@ pub struct AppPaths {
     pub singbox_log: PathBuf,
     pub front_config: PathBuf,
     pub front_log: PathBuf,
+    pub geo_dir: PathBuf,
 }
 
 impl AppPaths {
@@ -30,6 +31,7 @@ impl AppPaths {
             singbox_log: core_dir.join("singbox.log"),
             front_config: core_dir.join("front.json"),
             front_log: core_dir.join("front.log"),
+            geo_dir: data_dir.join("geo"),
             data_dir,
             db_path,
             log_dir,
@@ -40,9 +42,11 @@ impl AppPaths {
     pub fn ensure(&self) -> Result<()> {
         std::fs::create_dir_all(&self.log_dir)?;
         std::fs::create_dir_all(&self.core_dir)?;
+        std::fs::create_dir_all(&self.geo_dir)?;
         restrict(&self.data_dir, 0o700)?;
         restrict(&self.log_dir, 0o700)?;
         restrict(&self.core_dir, 0o700)?;
+        restrict(&self.geo_dir, 0o700)?;
         Ok(())
     }
 }

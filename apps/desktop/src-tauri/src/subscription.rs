@@ -424,6 +424,7 @@ mod tests {
             singbox_log: root.join("core/singbox.log"),
             front_config: root.join("core/front.json"),
             front_log: root.join("core/front.log"),
+            geo_dir: root.join("geo"),
         };
 
         let conn = store::open(&paths.db_path).expect("open test database");
@@ -504,6 +505,7 @@ mod tests {
             singbox_log: root.join("core/singbox.log"),
             front_config: root.join("core/front.json"),
             front_log: root.join("core/front.log"),
+            geo_dir: root.join("geo"),
         };
 
         let conn = store::open(&paths.db_path).expect("open test database");
