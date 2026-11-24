@@ -128,7 +128,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
       <PageHeader
         title={t("servers.title")}
         subtitle={t("servers.subtitle")}
-        badge={<span className="pill pill--accent">M4</span>}
+        badge={<span className="pill pill--accent">M5</span>}
         actions={
           <>
             <Button variant="text" icon="refresh" onClick={() => void refreshData()}>

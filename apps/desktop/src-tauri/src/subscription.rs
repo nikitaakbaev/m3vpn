@@ -422,6 +422,8 @@ mod tests {
             xray_log: root.join("core/xray.log"),
             singbox_config: root.join("core/singbox.json"),
             singbox_log: root.join("core/singbox.log"),
+            front_config: root.join("core/front.json"),
+            front_log: root.join("core/front.log"),
         };
 
         let conn = store::open(&paths.db_path).expect("open test database");
@@ -466,7 +468,7 @@ mod tests {
         );
         assert!(String::from_utf8_lossy(&output.stdout).contains("loc="));
 
-        let status = core::disconnect(&state);
+        let status = core::shutdown(&state, &paths);
         assert!(!status.running);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -500,6 +502,8 @@ mod tests {
             xray_log: root.join("core/xray.log"),
             singbox_config: root.join("core/singbox.json"),
             singbox_log: root.join("core/singbox.log"),
+            front_config: root.join("core/front.json"),
+            front_log: root.join("core/front.log"),
         };
 
         let conn = store::open(&paths.db_path).expect("open test database");
@@ -542,7 +546,7 @@ mod tests {
                         server.name,
                         String::from_utf8_lossy(&output.stderr)
                     );
-                    core::disconnect(&state);
+                    core::disconnect(&state, &paths);
                 }
                 Err(error) => {
                     eprintln!("connect failed for {}: {error:#}", server.name);
@@ -551,7 +555,7 @@ mod tests {
         }
 
         assert!(connected, "no imported server accepted a connection");
-        let status = core::disconnect(&state);
+        let status = core::shutdown(&state, &paths);
         assert!(!status.running);
         let _ = std::fs::remove_dir_all(&root);
     }

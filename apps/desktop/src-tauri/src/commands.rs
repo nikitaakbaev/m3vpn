@@ -71,28 +71,43 @@ pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Re
 }
 
 #[tauri::command]
-pub fn pick_free_port(state: State<'_, AppState>, start: u16) -> Result<u16, String> {
-    let start = if start == 0 { 10808 } else { start.max(1024) };
-    let port = port::find_free_port(start).map_err(|error| error.to_string())?;
-    {
-        let mut core = state
-            .core
-            .lock()
-            .map_err(|_| "core lock poisoned".to_string())?;
-        if core.process.is_some() {
-            return Err("Сначала отключите соединение, затем меняйте порт".to_string());
+pub async fn pick_free_port(app: AppHandle, start: u16) -> Result<u16, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let start = if start == 0 { 10808 } else { start.max(1024) };
+        let port = port::find_free_port(start).map_err(|error| error.to_string())?;
+        {
+            let mut core = state
+                .core
+                .lock()
+                .map_err(|_| "core lock poisoned".to_string())?;
+            if core.backend.is_some() {
+                return Err("Сначала отключите соединение, затем меняйте порт".to_string());
+            }
+            core.socks_port = port;
+            core.http_port = port.saturating_add(1);
         }
-        core.socks_port = port;
-        core.http_port = port.saturating_add(1);
-    }
-    state
-        .proxy_port
-        .store(port, std::sync::atomic::Ordering::Relaxed);
-    state
-        .set_setting("proxy.active_port", &port.to_string())
-        .map_err(|error| error.to_string())?;
-    tracing::info!(port, "selected free proxy port");
-    Ok(port)
+        state
+            .proxy_port
+            .store(port, std::sync::atomic::Ordering::Relaxed);
+        state
+            .set_setting("proxy.active_port", &port.to_string())
+            .map_err(|error| error.to_string())?;
+        if let Some(sidecars) = state.sidecars.as_ref() {
+            core::restart_front(
+                &state.core,
+                &state.paths,
+                sidecars,
+                port,
+                port.saturating_add(1),
+            )
+            .map_err(|error| format!("{error:#}"))?;
+        }
+        tracing::info!(port, "selected free proxy port");
+        Ok(port)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -267,7 +282,7 @@ pub async fn probe_servers(
 pub async fn disconnect_core(app: AppHandle) -> Result<ConnectionStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        Ok(core::disconnect(&state.core))
+        Ok(core::disconnect(&state.core, &state.paths))
     })
     .await
     .map_err(|error| error.to_string())?

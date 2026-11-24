@@ -158,6 +158,14 @@ pub fn run() {
             commands::open_core_dir,
         ])
         .setup(|app| {
+            {
+                let state = app.state::<AppState>();
+                if let Some(sidecars) = state.sidecars.as_ref() {
+                    if let Err(error) = core::start_front(&state.core, &state.paths, sidecars) {
+                        tracing::warn!(%error, "front proxy failed to start");
+                    }
+                }
+            }
             tray::setup(app)?;
 
             if app
@@ -217,5 +225,5 @@ pub fn show_main(app: &tauri::AppHandle) {
 
 pub fn shutdown_core(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
-    core::disconnect(&state.core);
+    core::shutdown(&state.core, &state.paths);
 }

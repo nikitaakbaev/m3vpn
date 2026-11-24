@@ -24,7 +24,7 @@ const ru: Dictionary = {
   "home.pingOn": "Автопинг включён",
   "home.pingOff": "Автопинг выключен",
   "home.autoPing": "Автопинг",
-  "topbar.badge": "M4 · AWG + RTT",
+  "topbar.badge": "M5 · hot-switch",
 
   "servers.title": "Серверы",
   "servers.subtitle": "Пинг, выбор быстрейшего и ручные профили",
@@ -196,7 +196,7 @@ const en: Dictionary = {
   "home.pingOn": "Auto-ping is on",
   "home.pingOff": "Auto-ping is off",
   "home.autoPing": "Auto-ping",
-  "topbar.badge": "M4 · AWG + RTT",
+  "topbar.badge": "M5 · hot-switch",
 
   "servers.title": "Servers",
   "servers.subtitle": "Ping, fastest-server selection and manual profiles",

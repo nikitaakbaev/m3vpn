@@ -39,7 +39,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
       <PageHeader
         title={t("home.title")}
         subtitle={t("home.subtitle")}
-        badge={<span className="pill pill--accent">M4</span>}
+        badge={<span className="pill pill--accent">M5</span>}
         actions={
           <Button variant="outlined" icon="dns" onClick={() => onNavigate("servers")}>
             {t("home.openServers")}
