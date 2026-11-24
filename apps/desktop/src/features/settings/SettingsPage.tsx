@@ -26,6 +26,7 @@ export function SettingsPage() {
   const seed = settings["ui.seed_color"] ?? "#22C55E";
   const language = settings["ui.language"] === "en" ? "en" : "ru";
   const mode = settings["mode"] === "tun" ? "tun" : "proxy";
+  const helperAvailable = info?.helperAvailable ?? false;
   const autoPort = settings["proxy.auto_port"] !== "false";
   const activePort = settings["proxy.active_port"] ?? String(info?.proxyPort ?? 10808);
   const pingEnabled = settings["ping.enabled"] !== "false";
@@ -46,7 +47,7 @@ export function SettingsPage() {
       <PageHeader
         title={t("settings.title")}
         subtitle={t("settings.subtitle")}
-        badge={<span className="pill pill--accent">M5</span>}
+        badge={<span className="pill pill--accent">M6</span>}
       />
 
       <div className="settings-grid">
@@ -129,12 +130,12 @@ export function SettingsPage() {
               label={t("settings.mode")}
               options={[
                 { value: "proxy", label: t("home.proxy"), icon: "public" },
-                { value: "tun", label: t("home.tun"), icon: "shield", disabled: true },
+                { value: "tun", label: t("home.tun"), icon: "shield", disabled: !helperAvailable },
               ]}
               onChange={(value) => void set("mode", value)}
             />
           </div>
-          <p className="hint">{t("settings.tunHint")}</p>
+          <p className="hint">{helperAvailable ? t("settings.tunReadyHint") : t("settings.tunMissingHint")}</p>
 
           <div className="settings-row">
             <div className="settings-row__text">
@@ -149,6 +150,19 @@ export function SettingsPage() {
               max={65535}
               value={settings["proxy.port"] ?? "10808"}
               onChange={(event) => saveNumber("proxy.port", event.target.value, 1024, 65535)}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.killSwitch")}</strong>
+              <span>{t("settings.killSwitchHint")}</span>
+            </div>
+            <Switch
+              checked={settings["tun.kill_switch"] === "true"}
+              disabled={!helperAvailable}
+              label={t("settings.killSwitch")}
+              onChange={(checked) => void set("tun.kill_switch", checked ? "true" : "false")}
             />
           </div>
 

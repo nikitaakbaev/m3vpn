@@ -1,5 +1,6 @@
 mod commands;
 mod core;
+mod helper_client;
 mod logging;
 mod paths;
 mod ping;
@@ -10,11 +11,12 @@ mod subscription;
 mod tray;
 
 use core::CoreState;
+use helper_client::HelperClient;
 use logging::LoggingGuard;
 use paths::AppPaths;
 use rusqlite::Connection;
 use sidecars::Sidecars;
-use std::sync::atomic::AtomicU16;
+use std::sync::atomic::{AtomicBool, AtomicU16};
 use std::sync::Mutex;
 use tauri::{Manager, WindowEvent};
 
@@ -23,6 +25,8 @@ pub struct AppState {
     pub paths: AppPaths,
     pub sidecars: Option<Sidecars>,
     pub core: Mutex<CoreState>,
+    pub helper: HelperClient,
+    pub tun_active: AtomicBool,
     pub _logging: Mutex<Option<LoggingGuard>>,
     pub proxy_port: AtomicU16,
 }
@@ -127,6 +131,8 @@ pub fn run() {
         paths,
         sidecars,
         core: Mutex::new(CoreState::new(active_port)),
+        helper: HelperClient::new(),
+        tun_active: AtomicBool::new(false),
         _logging: Mutex::new(Some(logging)),
         proxy_port: AtomicU16::new(active_port),
     };
@@ -225,5 +231,13 @@ pub fn show_main(app: &tauri::AppHandle) {
 
 pub fn shutdown_core(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
+    if state
+        .tun_active
+        .swap(false, std::sync::atomic::Ordering::Relaxed)
+    {
+        if let Err(error) = state.helper.stop_tun() {
+            tracing::warn!(%error, "failed to stop TUN helper");
+        }
+    }
     core::shutdown(&state.core, &state.paths);
 }

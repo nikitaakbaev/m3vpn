@@ -11,6 +11,7 @@ const EMPTY_STATUS: api.ConnectionStatus = {
   pid: null,
   startedAt: null,
   engine: null,
+  tun: false,
   error: null,
 };
 

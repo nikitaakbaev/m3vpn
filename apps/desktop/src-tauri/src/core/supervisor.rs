@@ -93,11 +93,17 @@ pub struct ConnectionStatus {
     pub pid: Option<u32>,
     pub started_at: Option<i64>,
     pub engine: Option<String>,
+    pub tun: bool,
     pub error: Option<String>,
 }
 
 pub fn start_front(lock: &Mutex<CoreState>, paths: &AppPaths, sidecars: &Sidecars) -> Result<()> {
     ensure_front(lock, paths, sidecars).map(|_| ())
+}
+
+pub fn front_pid(lock: &Mutex<CoreState>) -> Option<u32> {
+    let guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    guard.front.as_ref().map(Child::id)
 }
 
 pub fn status(lock: &Mutex<CoreState>, paths: &AppPaths) -> ConnectionStatus {
@@ -118,6 +124,7 @@ pub fn status(lock: &Mutex<CoreState>, paths: &AppPaths) -> ConnectionStatus {
         pid,
         started_at: guard.started_at,
         engine: guard.engine.map(|engine| engine.id().to_string()),
+        tun: false,
         error: guard.error.clone(),
     }
 }

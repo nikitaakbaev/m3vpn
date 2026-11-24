@@ -39,7 +39,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
       <PageHeader
         title={t("home.title")}
         subtitle={t("home.subtitle")}
-        badge={<span className="pill pill--accent">M5</span>}
+        badge={<span className="pill pill--accent">M6</span>}
         actions={
           <Button variant="outlined" icon="dns" onClick={() => onNavigate("servers")}>
             {t("home.openServers")}
@@ -54,7 +54,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
               <span className={`status-dot${status.running ? " is-on" : ""}`} />
               {status.running ? t("home.on") : t("home.off")}
             </span>
-            <span className="hero__mode">PROXY</span>
+            <span className="hero__mode">{status.tun ? "TUN" : "PROXY"}</span>
           </div>
 
           <div className="hero__body">

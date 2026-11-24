@@ -1,0 +1,21 @@
+[Unit]
+Description=m3vpn privileged TUN helper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/m3vpn/m3vpn-helper run
+ExecStopPost=/usr/lib/m3vpn/m3vpn-helper restore
+Restart=on-failure
+RestartSec=1
+RuntimeDirectory=m3vpn
+RuntimeDirectoryMode=0770
+Group=m3vpn
+UMask=0077
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

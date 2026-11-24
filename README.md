@@ -17,6 +17,8 @@
 - **M5 — готово.** Front-proxy с hot-switch и авто-переключением на быстрейший:
   смена сервера не рвёт активные соединения, при падении бэкенда трафик уходит
   в direct. См. [`docs/m5-report.md`](docs/m5-report.md).
+- **M6 — готово.** TUN через привилегированный helper, snapshot/restore,
+  watchdog и опциональный kill switch. См. [`docs/m6-report.md`](docs/m6-report.md).
 
 ## Структура
 

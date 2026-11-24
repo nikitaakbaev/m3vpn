@@ -10,6 +10,7 @@ export interface AppInfo {
   dataDir: string;
   logDir: string;
   proxyPort: number;
+  helperAvailable: boolean;
 }
 
 export interface Profile {
@@ -46,6 +47,7 @@ export interface ConnectionStatus {
   pid: number | null;
   startedAt: number | null;
   engine: string | null;
+  tun: boolean;
   error: string | null;
 }
 
@@ -116,6 +118,7 @@ const mockInfo: AppInfo = {
   dataDir: "~/.local/share/m3vpn",
   logDir: "~/.local/share/m3vpn/logs",
   proxyPort: 10810,
+  helperAvailable: false,
 };
 
 const now = Math.floor(Date.now() / 1000);
@@ -162,6 +165,7 @@ let mockStatus: ConnectionStatus = {
   pid: null,
   startedAt: null,
   engine: null,
+  tun: false,
   error: null,
 };
 
@@ -335,6 +339,7 @@ export async function connectServer(serverId: string): Promise<ConnectionStatus>
       pid: 4242,
       startedAt: Math.floor(Date.now() / 1000),
       engine: server.protocol === "awg" ? "sing-box" : "xray",
+      tun: false,
       error: null,
     };
     return mockStatus;
@@ -352,6 +357,7 @@ export async function disconnectCore(): Promise<ConnectionStatus> {
       pid: null,
       startedAt: null,
       engine: null,
+      tun: false,
     };
     return mockStatus;
   }

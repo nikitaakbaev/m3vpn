@@ -18,6 +18,7 @@ pub struct AppInfo {
     pub data_dir: String,
     pub log_dir: String,
     pub proxy_port: u16,
+    pub helper_available: bool,
 }
 
 #[derive(Serialize)]
@@ -43,6 +44,7 @@ pub fn get_app_info(state: State<'_, AppState>) -> AppInfo {
         data_dir: state.paths.data_dir.display().to_string(),
         log_dir: state.paths.log_dir.display().to_string(),
         proxy_port: state.proxy_port.load(std::sync::atomic::Ordering::Relaxed),
+        helper_available: state.helper.available(),
     }
 }
 
@@ -216,6 +218,9 @@ pub fn delete_profile(state: State<'_, AppState>, profile_id: String) -> Result<
 pub async fn connect_server(app: AppHandle, server_id: String) -> Result<ConnectionStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
+        if state.setting("mode").as_deref() == Some("tun") && !state.helper.available() {
+            return Err("TUN helper не установлен: запусти scripts/install-helper.sh".to_string());
+        }
         let sidecars = state
             .sidecars
             .as_ref()
@@ -234,7 +239,7 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
         let config: serde_json::Value = serde_json::from_str(&details.full_config_json)
             .map_err(|error| format!("битый конфиг: {error}"))?;
 
-        let status = if details.protocol == "awg" {
+        let mut status = if details.protocol == "awg" {
             core::connect_singbox(
                 &state.core,
                 &state.paths,
@@ -254,6 +259,24 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
             )
         }
         .map_err(|error| format!("{error:#}"))?;
+
+        if state.setting("mode").as_deref() == Some("tun") {
+            let front_pid = core::front_pid(&state.core);
+            let kill_switch = state.setting_bool("tun.kill_switch", false);
+            if let Err(error) = state.helper.start_tun(
+                std::process::id(),
+                front_pid,
+                status.socks_port,
+                kill_switch,
+            ) {
+                core::disconnect(&state.core, &state.paths);
+                return Err(format!("TUN helper: {error:#}"));
+            }
+            state
+                .tun_active
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            status.tun = true;
+        }
 
         let _ = state.set_setting("last.server_id", &server_id);
         Ok(status)
@@ -282,7 +305,21 @@ pub async fn probe_servers(
 pub async fn disconnect_core(app: AppHandle) -> Result<ConnectionStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        Ok(core::disconnect(&state.core, &state.paths))
+        let mut tun_error = None;
+        if state
+            .tun_active
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            if let Err(error) = state.helper.stop_tun() {
+                tun_error = Some(format!("TUN helper: {error:#}"));
+            }
+        }
+        let mut status = core::disconnect(&state.core, &state.paths);
+        status.tun = false;
+        match tun_error {
+            Some(error) => Err(error),
+            None => Ok(status),
+        }
     })
     .await
     .map_err(|error| error.to_string())?
@@ -290,7 +327,16 @@ pub async fn disconnect_core(app: AppHandle) -> Result<ConnectionStatus, String>
 
 #[tauri::command]
 pub fn connection_status(state: State<'_, AppState>) -> ConnectionStatus {
-    core::status(&state.core, &state.paths)
+    let mut status = core::status(&state.core, &state.paths);
+    let mut tun = state.tun_active.load(std::sync::atomic::Ordering::Relaxed);
+    if tun && !state.helper.available() {
+        tun = false;
+        state
+            .tun_active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+    status.tun = status.running && tun;
+    status
 }
 
 #[tauri::command]
