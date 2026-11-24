@@ -8,13 +8,15 @@
 - **M0 — готово.** Ядра собраны, AWG/selector/TUN проверены. См. [`docs/m0-report.md`](docs/m0-report.md).
 - **M1 — готово.** Каркас Tauri 2 + React + Material 3, SQLite, настройки, трей.
   См. [`docs/m1-report.md`](docs/m1-report.md).
+- **M2 — готово.** Импорт полных Xray-конфигов, реальный запуск Xray, подключение,
+  новый dark Material 3 дизайн. См. [`docs/m2-report.md`](docs/m2-report.md).
 
 ## Структура
 
 ```
 apps/desktop/           React + Material 3 + Tauri 2
 apps/desktop/src-tauri/ Rust: настройки, SQLite, трей, порты
-crates/                 будущие parser/model/helper
+crates/parser/          парсер полных Xray-конфигов
 sidecars/               версии и хеши ядер (бинарники не в git)
 scripts/                сборка ядер и spike-проверки
 docs/                   отчёты по этапам
@@ -31,6 +33,12 @@ bash scripts/check-sidecars.sh
 cd apps/desktop
 npm install
 npm run tauri dev
+```
+
+Импорт подписки без UI (в ту же SQLite, что использует приложение):
+
+```bash
+apps/desktop/src-tauri/target/debug/m3vpn --import "<url>" "PingBooster"
 ```
 
 Подписка и токены не попадают в git: `.secrets/` исключён и доступен только владельцу.

@@ -25,7 +25,10 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
                     let _ = window.hide();
                 }
             }
-            "quit" => app.exit(0),
+            "quit" => {
+                crate::shutdown_core(app);
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

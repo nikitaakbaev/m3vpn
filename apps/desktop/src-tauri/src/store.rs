@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -24,8 +25,8 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("proxy.port", "10808"),
     ("proxy.auto_port", "true"),
     ("proxy.active_port", "10808"),
-    ("ui.theme", "system"),
-    ("ui.seed_color", "#4F6F52"),
+    ("ui.theme", "dark"),
+    ("ui.seed_color", "#22C55E"),
     ("ui.language", "ru"),
     ("startup.autoconnect", "false"),
     ("startup.minimized", "false"),
@@ -152,6 +153,15 @@ fn seed(conn: &Connection) -> Result<()> {
     for (key, value) in DEFAULTS {
         stmt.execute(params![key, value])?;
     }
+
+    // M2 switches the default look to the dark "shield" palette. Existing M1
+    // databases are migrated once, without overriding later user choices.
+    if get(conn, "ui.theme_migrated")?.is_none() {
+        set(conn, "ui.theme", "dark")?;
+        set(conn, "ui.seed_color", "#22C55E")?;
+        set(conn, "ui.theme_migrated", "1")?;
+    }
+
     Ok(())
 }
 
@@ -182,6 +192,197 @@ pub fn set(conn: &Connection, key: &str, value: &str) -> Result<()> {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         params![key, value],
     )?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct NewProfile {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub url_hidden: bool,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub support_url: Option<String>,
+    pub web_page_url: Option<String>,
+    pub update_interval_hours: u32,
+    pub userinfo: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewServer {
+    pub id: String,
+    pub profile_id: String,
+    pub name: String,
+    pub protocol: String,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub params_json: Option<String>,
+    pub full_config_json: String,
+    pub sort_index: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileRow {
+    pub id: String,
+    pub name: String,
+    pub title: Option<String>,
+    pub server_count: i64,
+    pub update_interval_hours: i64,
+    pub userinfo: Option<String>,
+    pub last_refresh_at: Option<i64>,
+    pub created_at: i64,
+    pub hide_url: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerRow {
+    pub id: String,
+    pub profile_id: String,
+    pub profile_name: String,
+    pub name: String,
+    pub protocol: String,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub enabled: bool,
+    pub latency_ms: Option<i64>,
+}
+
+pub fn save_import(conn: &Connection, profile: &NewProfile, servers: &[NewServer]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "INSERT INTO profiles(
+            id, name, url, url_hidden, title, description, support_url, web_page_url,
+            update_interval_hours, userinfo_json, last_refresh_at, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            url = excluded.url,
+            url_hidden = excluded.url_hidden,
+            title = excluded.title,
+            description = excluded.description,
+            support_url = excluded.support_url,
+            web_page_url = excluded.web_page_url,
+            update_interval_hours = excluded.update_interval_hours,
+            userinfo_json = excluded.userinfo_json,
+            last_refresh_at = excluded.last_refresh_at,
+            updated_at = excluded.updated_at",
+        params![
+            profile.id,
+            profile.name,
+            profile.url,
+            profile.url_hidden as i64,
+            profile.title,
+            profile.description,
+            profile.support_url,
+            profile.web_page_url,
+            profile.update_interval_hours as i64,
+            profile.userinfo,
+            profile.updated_at,
+            profile.created_at,
+            profile.updated_at,
+        ],
+    )?;
+
+    tx.execute("DELETE FROM servers WHERE profile_id = ?1", [&profile.id])?;
+    for server in servers {
+        tx.execute(
+            "INSERT INTO servers(
+                id, profile_id, name, protocol, host, port, params_json, full_config_json,
+                enabled, sort_index, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?10)",
+            params![
+                server.id,
+                server.profile_id,
+                server.name,
+                server.protocol,
+                server.host,
+                server.port.map(i64::from),
+                server.params_json,
+                server.full_config_json,
+                server.sort_index,
+                profile.updated_at,
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn list_profiles(conn: &Connection) -> Result<Vec<ProfileRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT p.id, p.name, p.title, COUNT(s.id), p.update_interval_hours,
+                p.userinfo_json, p.last_refresh_at, p.created_at, p.url_hidden
+         FROM profiles p
+         LEFT JOIN servers s ON s.profile_id = p.id
+         GROUP BY p.id
+         ORDER BY p.created_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(ProfileRow {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            title: row.get(2)?,
+            server_count: row.get(3)?,
+            update_interval_hours: row.get(4)?,
+            userinfo: row.get(5)?,
+            last_refresh_at: row.get(6)?,
+            created_at: row.get(7)?,
+            hide_url: row.get::<_, i64>(8)? != 0,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<ServerRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.id, s.profile_id, p.name, s.name, s.protocol, s.host, s.port,
+                s.enabled, s.latency_ms
+         FROM servers s
+         JOIN profiles p ON p.id = s.profile_id
+         WHERE (?1 IS NULL OR s.profile_id = ?1)
+         ORDER BY p.created_at DESC, s.sort_index ASC",
+    )?;
+    let rows = stmt.query_map([profile_id], |row| {
+        Ok(ServerRow {
+            id: row.get(0)?,
+            profile_id: row.get(1)?,
+            profile_name: row.get(2)?,
+            name: row.get(3)?,
+            protocol: row.get(4)?,
+            host: row.get(5)?,
+            port: row.get::<_, Option<i64>>(6)?.map(|port| port as u16),
+            enabled: row.get::<_, i64>(7)? != 0,
+            latency_ms: row.get(8)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn server_config(conn: &Connection, server_id: &str) -> Result<Option<(String, String)>> {
+    Ok(conn
+        .query_row(
+            "SELECT name, full_config_json FROM servers WHERE id = ?1",
+            [server_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?)
+}
+
+pub fn delete_profile(conn: &Connection, profile_id: &str) -> Result<()> {
+    conn.execute("DELETE FROM profiles WHERE id = ?1", [profile_id])?;
     Ok(())
 }
 

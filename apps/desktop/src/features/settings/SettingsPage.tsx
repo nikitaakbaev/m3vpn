@@ -17,10 +17,13 @@ export function SettingsPage() {
   const set = useAppStore((state) => state.set);
   const pickPort = useAppStore((state) => state.pickPort);
   const openLogs = useAppStore((state) => state.openLogs);
+  const openCoreDir = useAppStore((state) => state.openCoreDir);
+  const core = useAppStore((state) => state.core);
+  const status = useAppStore((state) => state.status);
   const notify = useAppStore((state) => state.notify);
 
-  const theme = (settings["ui.theme"] ?? "system") as ThemeMode;
-  const seed = settings["ui.seed_color"] ?? "#4F6F52";
+  const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
+  const seed = settings["ui.seed_color"] ?? "#22C55E";
   const language = settings["ui.language"] === "en" ? "en" : "ru";
   const mode = settings["mode"] === "tun" ? "tun" : "proxy";
   const autoPort = settings["proxy.auto_port"] !== "false";
@@ -39,7 +42,7 @@ export function SettingsPage() {
       <PageHeader
         title={t("settings.title")}
         subtitle={t("settings.subtitle")}
-        badge={<span className="pill pill--tonal">M1</span>}
+        badge={<span className="pill pill--accent">M2</span>}
       />
 
       <div className="settings-grid">
@@ -159,7 +162,13 @@ export function SettingsPage() {
               <strong>{t("settings.activePort")}</strong>
               <span className="port-chip">127.0.0.1:{activePort}</span>
             </div>
-            <Button variant="tonal" icon="autorenew" onClick={() => void pickPort()}>
+            <Button
+              variant="tonal"
+              icon="autorenew"
+              disabled={status.running}
+              title={status.running ? t("settings.portLocked") : undefined}
+              onClick={() => void pickPort()}
+            >
               {t("settings.pickPort")}
             </Button>
           </div>
@@ -269,6 +278,35 @@ export function SettingsPage() {
               label={t("settings.autoconnect")}
               onChange={(checked) => void set("startup.autoconnect", checked ? "true" : "false")}
             />
+          </div>
+        </Card>
+
+        <Card className="settings-card">
+          <div className="card-heading">
+            <Icon name="memory" size={20} />
+            <h3>{t("settings.core")}</h3>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{core?.available ? t("settings.coreReady") : t("settings.coreMissing")}</strong>
+              <span className="path">{core?.xrayPath ?? "—"}</span>
+            </div>
+            <span className={`status-dot${core?.available ? " is-on" : ""}`} />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.xrayVersion")}</strong>
+              <span>{core?.xrayVersion ?? "—"}</span>
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.assetsDir")}</strong>
+              <span className="path">{core?.assetsDir ?? "—"}</span>
+            </div>
+            <Button variant="tonal" icon="folder_open" onClick={() => void openCoreDir()}>
+              {t("settings.openCoreDir")}
+            </Button>
           </div>
         </Card>
 

@@ -1,13 +1,18 @@
 mod commands;
+mod core;
 mod logging;
 mod paths;
 mod port;
+mod sidecars;
 mod store;
+mod subscription;
 mod tray;
 
+use core::CoreState;
 use logging::LoggingGuard;
 use paths::AppPaths;
 use rusqlite::Connection;
+use sidecars::Sidecars;
 use std::sync::atomic::AtomicU16;
 use std::sync::Mutex;
 use tauri::{Manager, WindowEvent};
@@ -15,6 +20,8 @@ use tauri::{Manager, WindowEvent};
 pub struct AppState {
     pub db: Mutex<Connection>,
     pub paths: AppPaths,
+    pub sidecars: Option<Sidecars>,
+    pub core: Mutex<CoreState>,
     pub _logging: Mutex<Option<LoggingGuard>>,
     pub proxy_port: AtomicU16,
 }
@@ -94,6 +101,19 @@ pub fn run() {
     };
     let _ = store::set(&conn, "proxy.active_port", &active_port.to_string());
 
+    let sidecars = match Sidecars::discover() {
+        Ok(sidecars) => {
+            if let Err(error) = sidecars.check() {
+                tracing::warn!(%error, "sidecars are incomplete");
+            }
+            Some(sidecars)
+        }
+        Err(error) => {
+            tracing::warn!(%error, "sidecars are unavailable; connect will fail");
+            None
+        }
+    };
+
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         data_dir = %paths.data_dir.display(),
@@ -104,11 +124,13 @@ pub fn run() {
     let state = AppState {
         db: Mutex::new(conn),
         paths,
+        sidecars,
+        core: Mutex::new(CoreState::new(active_port)),
         _logging: Mutex::new(Some(logging)),
         proxy_port: AtomicU16::new(active_port),
     };
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main(app);
         }))
@@ -120,6 +142,15 @@ pub fn run() {
             commands::pick_free_port,
             commands::open_logs_dir,
             commands::log_frontend,
+            commands::import_subscription,
+            commands::list_profiles,
+            commands::list_servers,
+            commands::delete_profile,
+            commands::connect_server,
+            commands::disconnect_core,
+            commands::connection_status,
+            commands::core_info,
+            commands::open_core_dir,
         ])
         .setup(|app| {
             tray::setup(app)?;
@@ -145,8 +176,21 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            shutdown_core(app_handle);
+        }
+    });
+}
+
+pub fn cli_import(url: &str, name: Option<String>) -> anyhow::Result<subscription::ImportSummary> {
+    let paths = AppPaths::new()?;
+    paths.ensure()?;
+    let conn = store::open(&paths.db_path)?;
+    subscription::import(&Mutex::new(conn), url, name)
 }
 
 pub fn show_main(app: &tauri::AppHandle) {
@@ -155,4 +199,9 @@ pub fn show_main(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+pub fn shutdown_core(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    core::disconnect(&state.core, &state.paths);
 }

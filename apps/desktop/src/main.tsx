@@ -1,4 +1,5 @@
 import ReactDOM from "react-dom/client";
+import "@fontsource-variable/inter";
 import "@material-symbols/font-400/rounded.css";
 import "./styles/global.css";
 import App from "./App";

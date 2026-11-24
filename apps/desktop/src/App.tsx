@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavRail, type Page } from "./components/NavRail";
 import { Snackbar } from "./components/Snackbar";
+import { ErrorDialog } from "./components/ErrorDialog";
 import { Icon } from "./components/Icon";
 import { applyTheme, watchSystemTheme, type ThemeMode } from "./theme";
 import { useAppStore, useT } from "./store/useAppStore";
@@ -21,8 +22,13 @@ export default function App() {
   const load = useAppStore((state) => state.load);
   const loaded = useAppStore((state) => state.loaded);
   const settings = useAppStore((state) => state.settings);
+  const status = useAppStore((state) => state.status);
+  const servers = useAppStore((state) => state.servers);
+  const connect = useAppStore((state) => state.connect);
+  const pollStatus = useAppStore((state) => state.pollStatus);
   const t = useT();
   const [page, setPageState] = useState<Page>(pageFromHash);
+  const autoTried = useRef(false);
 
   const setPage = (next: Page) => {
     setPageState(next);
@@ -39,8 +45,23 @@ export default function App() {
     void load();
   }, [load]);
 
-  const theme = (settings["ui.theme"] ?? "system") as ThemeMode;
-  const seed = settings["ui.seed_color"] ?? "#4F6F52";
+  useEffect(() => {
+    if (!loaded) return;
+    void pollStatus();
+    const timer = window.setInterval(() => void pollStatus(), 2000);
+    return () => window.clearInterval(timer);
+  }, [loaded, pollStatus]);
+
+  useEffect(() => {
+    if (!loaded || autoTried.current) return;
+    if (settings["startup.autoconnect"] !== "true") return;
+    if (status.running || servers.length === 0) return;
+    autoTried.current = true;
+    void connect();
+  }, [loaded, settings, status.running, servers.length, connect]);
+
+  const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
+  const seed = settings["ui.seed_color"] ?? "#22C55E";
 
   useEffect(() => {
     applyTheme(seed, theme);
@@ -75,6 +96,10 @@ export default function App() {
             <span className="topbar__tag">Material 3 · Linux</span>
           </div>
           <div className="topbar__actions">
+            <span className={`pill ${status.running ? "pill--success" : "pill--muted"}`}>
+              <span className={`status-dot${status.running ? " is-on" : ""}`} />
+              {status.running ? status.serverName ?? t("topbar.connected") : t("topbar.disconnected")}
+            </span>
             <span className="pill pill--tonal">{t("topbar.badge")}</span>
           </div>
         </header>
@@ -87,6 +112,7 @@ export default function App() {
         </main>
       </div>
       <Snackbar />
+      <ErrorDialog />
     </div>
   );
 }

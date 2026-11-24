@@ -66,6 +66,32 @@ export function applyTheme(seed: string, mode: ThemeMode): void {
     root.style.setProperty(`--md-sys-color-${token}`, hexFromArgb(argb));
   }
 
+  // The skill's "shield dark + connected green" palette. Material 3 keeps the
+  // component semantics; these surfaces give the app its own night-time identity.
+  if (dark) {
+    const surfaces: Record<string, string> = {
+      "surface": "#0F172A",
+      "background": "#0F172A",
+      "surface-dim": "#0B1222",
+      "surface-bright": "#1E2942",
+      "surface-container-lowest": "#0B1222",
+      "surface-container-low": "#10192E",
+      "surface-container": "#192134",
+      "surface-container-high": "#1E2942",
+      "surface-container-highest": "#243250",
+      "on-surface": "#F8FAFC",
+      "on-surface-variant": "#94A3B8",
+      "outline": "#334155",
+      "outline-variant": "rgba(255, 255, 255, 0.08)",
+      "inverse-surface": "#E2E8F0",
+      "inverse-on-surface": "#0F172A",
+    };
+    for (const [token, value] of Object.entries(surfaces)) {
+      root.style.setProperty(`--md-sys-color-${token}`, value);
+    }
+  }
+
+  root.style.setProperty("--m3-accent", seed);
   root.style.setProperty("color-scheme", dark ? "dark" : "light");
   root.dataset.theme = dark ? "dark" : "light";
   root.dataset.seed = seed;

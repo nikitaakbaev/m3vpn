@@ -1,10 +1,9 @@
 import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
-import { Segmented } from "../../components/Segmented";
-import { Switch } from "../../components/Switch";
 import { Icon } from "../../components/Icon";
 import { useAppStore, useT } from "../../store/useAppStore";
+import { formatBytes, formatDate, formatUptime, parseUserinfo } from "../../lib/format";
 import type { Page } from "../../components/NavRail";
 
 interface HomePageProps {
@@ -14,166 +13,243 @@ interface HomePageProps {
 export function HomePage({ onNavigate }: HomePageProps) {
   const t = useT();
   const settings = useAppStore((state) => state.settings);
-  const info = useAppStore((state) => state.info);
-  const set = useAppStore((state) => state.set);
-  const notify = useAppStore((state) => state.notify);
-  const pickPort = useAppStore((state) => state.pickPort);
+  const profiles = useAppStore((state) => state.profiles);
+  const servers = useAppStore((state) => state.servers);
+  const status = useAppStore((state) => state.status);
+  const core = useAppStore((state) => state.core);
+  const selectedServerId = useAppStore((state) => state.selectedServerId);
+  const selectServer = useAppStore((state) => state.selectServer);
+  const connect = useAppStore((state) => state.connect);
+  const disconnect = useAppStore((state) => state.disconnect);
+  const busy = useAppStore((state) => state.busy);
+  const openLogs = useAppStore((state) => state.openLogs);
 
+  const port = status.socksPort || Number(settings["proxy.active_port"] ?? 10810);
   const mode = settings["mode"] === "tun" ? "tun" : "proxy";
-  const port = settings["proxy.active_port"] ?? String(info?.proxyPort ?? 10808);
-  const interval = settings["ping.interval_sec"] ?? "60";
-  const pingOn = settings["ping.enabled"] !== "false";
-  const closeToTray = settings["startup.close_to_tray"] !== "false";
+  const selected = servers.find((server) => server.id === selectedServerId) ?? null;
+  const profile = profiles[0] ?? null;
+  const info = parseUserinfo(profile?.userinfo);
+  const used = (info.upload ?? 0) + (info.download ?? 0);
+  const total = info.total ?? 0;
+  const percent = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+  const quick = servers.slice(0, 5);
 
   return (
     <>
       <PageHeader
         title={t("home.title")}
         subtitle={t("home.subtitle")}
-        badge={
-          <span className="pill pill--success">
-            <Icon name="check_circle" size={15} filled /> M0
-          </span>
-        }
+        badge={<span className="pill pill--accent">M2</span>}
         actions={
-          <Button variant="text" icon="settings" onClick={() => onNavigate("settings")}>
-            {t("home.openSettings")}
+          <Button variant="outlined" icon="dns" onClick={() => onNavigate("servers")}>
+            {t("home.openServers")}
           </Button>
         }
       />
 
-      <section className="home-grid">
-        <Card variant="accent" className="connect-card">
-          <div className="connect-card__top">
-            <span className="pill pill--muted">
-              <span className="status-dot" />
-              {t("home.off")}
+      <section className="hero-grid">
+        <Card variant="accent" className="hero">
+          <div className="hero__top">
+            <span className={`pill ${status.running ? "pill--success" : "pill--muted"}`}>
+              <span className={`status-dot${status.running ? " is-on" : ""}`} />
+              {status.running ? t("home.on") : t("home.off")}
             </span>
-            <Icon name="vpn_lock" size={30} />
+            <span className="hero__mode">{mode === "tun" ? "TUN" : "PROXY"}</span>
           </div>
 
-          <div className="connect-card__body">
-            <div>
+          <div className="hero__body">
+            <div className="hero__copy">
               <div className="eyebrow">{t("home.connection")}</div>
-              <h2>{t("home.noServer")}</h2>
-              <p>{t("home.connectHint")}</p>
+              <h2>{status.running ? status.serverName ?? t("home.on") : selected?.name ?? t("home.noServer")}</h2>
+              <p>{status.running ? t("home.runningHint") : t("home.readyHint")}</p>
+              <div className="hero__meta">
+                <span>
+                  <Icon name="lan" size={16} /> 127.0.0.1:{port}
+                </span>
+                <span>
+                  <Icon name="timer" size={16} /> {settings["ping.interval_sec"] ?? "60"}s
+                </span>
+                <span>
+                  <Icon name="memory" size={16} /> {core?.xrayVersion?.split(" ").slice(0, 2).join(" ") ?? "Xray"}
+                </span>
+              </div>
             </div>
+
             <button
               type="button"
-              className="connect-orb"
-              aria-label={t("home.connect")}
-              onClick={() => notify(t("snackbar.m1"))}
+              className={`power${status.running ? " is-on" : ""}${busy ? " is-busy" : ""}`}
+              aria-label={status.running ? t("home.disconnect") : t("home.connect")}
+              disabled={busy}
+              onClick={() => void (status.running ? disconnect() : connect())}
             >
-              <Icon name="power_settings_new" size={42} />
+              <span className="power__ring" />
+              {busy ? <span className="spinner" /> : <Icon name="power_settings_new" size={40} />}
             </button>
           </div>
 
-          <div className="connect-card__footer">
-            <span className="muted">{t("home.mode")}</span>
-            <Segmented
-              value={mode}
-              label={t("home.mode")}
-              options={[
-                { value: "proxy", label: t("home.proxy"), icon: "public" },
-                { value: "tun", label: t("home.tun"), icon: "shield" },
-              ]}
-              onChange={(value) => void set("mode", value)}
-            />
+          <div className="hero__footer">
+            <div className="hero__selected">
+              <span className="muted">{t("home.selected")}</span>
+              <button type="button" className="server-picker" onClick={() => onNavigate("servers")}>
+                <Icon name="dns" size={17} />
+                <span>{selected?.name ?? t("home.chooseServer")}</span>
+                <Icon name="expand_more" size={18} />
+              </button>
+            </div>
+            <div className="hero__actions">
+              {status.running ? (
+                <Button variant="outlined" icon="stop_circle" disabled={busy} onClick={() => void disconnect()}>
+                  {t("home.disconnect")}
+                </Button>
+              ) : (
+                <Button icon="bolt" disabled={busy || !selected} onClick={() => void connect()}>
+                  {t("home.connect")}
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
 
-        <Card className="stat-card">
-          <div className="card-heading">
-            <Icon name="lan" size={20} />
-            <h3>{t("home.proxyPort")}</h3>
-          </div>
-          <div className="metric">
-            {port}
-            <span>tcp</span>
-          </div>
-          <p className="muted">127.0.0.1:{port}</p>
-          <Button variant="tonal" icon="autorenew" onClick={() => void pickPort()}>
-            {t("home.pickPort")}
-          </Button>
-          <p className="hint">{t("home.portHint")}</p>
-        </Card>
+        <div className="side-stack">
+          <Card className="summary-card">
+            <div className="card-heading">
+              <Icon name="monitoring" size={19} />
+              <h3>{t("home.traffic")}</h3>
+            </div>
+            {profile ? (
+              <>
+                <div className="summary-card__number">{formatBytes(used)}</div>
+                <p className="muted">
+                  из {formatBytes(total)} · до {formatDate(info.expire)}
+                </p>
+                <div className="progress">
+                  <span style={{ width: `${percent}%` }} />
+                </div>
+                <div className="summary-card__stats">
+                  <span>{t("home.profilesLabel")}: {profiles.length}</span>
+                  <span>{t("home.serversLabel")}: {servers.length}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="muted">{t("home.noSubscription")}</p>
+                <Button variant="tonal" icon="add_link" onClick={() => onNavigate("subscriptions")}>
+                  {t("home.addSubscription")}
+                </Button>
+              </>
+            )}
+          </Card>
 
-        <Card className="stat-card">
-          <div className="card-heading">
-            <Icon name="speed" size={20} />
-            <h3>{t("home.autoPing")}</h3>
-          </div>
-          <div className="metric">
-            {interval}
-            <span>сек</span>
-          </div>
-          <p className="muted">{pingOn ? t("home.pingOn") : t("home.pingOff")}</p>
-          <Switch
-            checked={pingOn}
-            label={t("home.autoPing")}
-            onChange={(checked) => void set("ping.enabled", checked ? "true" : "false")}
-          />
-        </Card>
-
-        <Card className="milestone-card">
-          <div className="milestone">
-            <span className="milestone__icon milestone__icon--done">
-              <Icon name="check" size={18} filled />
-            </span>
-            <div>
-              <h3>{t("home.m0Title")}</h3>
-              <p>{t("home.m0Done")}</p>
+          <Card className="core-card">
+            <div className="card-heading">
+              <Icon name="memory" size={19} />
+              <h3>{t("home.core")}</h3>
             </div>
-          </div>
-          <div className="milestone">
-            <span className="milestone__icon milestone__icon--active">
-              <Icon name="bolt" size={18} filled />
-            </span>
-            <div>
-              <h3>{t("home.m1Title")}</h3>
-              <p>{t("home.m1Active")}</p>
+            <div className="core-card__row">
+              <span className={`status-dot${core?.available ? " is-on" : ""}`} />
+              <span>{core?.available ? t("home.coreReady") : t("home.coreMissing")}</span>
             </div>
-          </div>
-          <div className="progress" aria-label={t("home.progress")}>
-            <span style={{ width: "16%" }} />
-          </div>
-          <p className="hint">{t("home.progressHint")}</p>
-        </Card>
-
-        <Card className="stat-card">
-          <div className="card-heading">
-            <Icon name="power_settings_new" size={20} />
-            <h3>{t("home.closeToTray")}</h3>
-          </div>
-          <p className="muted">{t("home.trayHint")}</p>
-          <Switch
-            checked={closeToTray}
-            label={t("home.closeToTray")}
-            onChange={(checked) => void set("startup.close_to_tray", checked ? "true" : "false")}
-          />
-        </Card>
-
-        <Card className="stat-card stat-card--wide">
-          <div className="card-heading">
-            <Icon name="info" size={20} />
-            <h3>{t("home.version")}</h3>
-          </div>
-          <dl className="facts">
-            <div>
-              <dt>m3vpn</dt>
-              <dd>v{info?.version ?? "0.1.0"}</dd>
+            <p className="mono muted">{core?.xrayVersion ?? "xray —"}</p>
+            <div className="core-card__actions">
+              <Button variant="text" icon="folder_open" onClick={() => void openLogs()}>
+                {t("home.openLogs")}
+              </Button>
             </div>
-            <div>
-              <dt>Tauri</dt>
-              <dd>{info?.tauriVersion ?? "2.x"}</dd>
-            </div>
-            <div>
-              <dt>{t("home.stack")}</dt>
-              <dd>React · M3 · SQLite</dd>
-            </div>
-          </dl>
-        </Card>
+          </Card>
+        </div>
       </section>
+
+      {servers.length === 0 ? (
+        <Card className="welcome-card">
+          <div className="welcome-card__icon">
+            <Icon name="rocket_launch" size={28} />
+          </div>
+          <div>
+            <h2>{t("home.welcomeTitle")}</h2>
+            <p>{t("home.welcomeText")}</p>
+          </div>
+          <Button icon="add_link" onClick={() => onNavigate("subscriptions")}>
+            {t("home.addSubscription")}
+          </Button>
+        </Card>
+      ) : (
+        <section className="home-lower">
+          <Card className="quick-card">
+            <div className="section-head">
+              <div>
+                <h3>{t("home.quickServers")}</h3>
+                <p className="muted">{t("home.quickHint")}</p>
+              </div>
+              <Button variant="text" trailingIcon="arrow_forward" onClick={() => onNavigate("servers")}>
+                {t("home.allServers")}
+              </Button>
+            </div>
+            <div className="server-list">
+              {quick.map((server) => {
+                const active = server.id === selectedServerId;
+                const connected = status.running && server.id === status.serverId;
+                return (
+                  <button
+                    key={server.id}
+                    type="button"
+                    className={`server-item${active ? " is-selected" : ""}${connected ? " is-connected" : ""}`}
+                    onClick={() => selectServer(server.id)}
+                    onDoubleClick={() => void connect(server.id)}
+                  >
+                    <span className="server-item__dot" />
+                    <span className="server-item__body">
+                      <span className="server-item__name">{server.name}</span>
+                      <span className="server-item__meta">
+                        {server.protocol.toUpperCase()}
+                        {server.host ? ` · ${server.host}` : ""}
+                        {server.port ? `:${server.port}` : ""}
+                      </span>
+                    </span>
+                    {connected ? (
+                      <span className="pill pill--success">
+                        <Icon name="check_circle" size={14} filled /> {t("home.on")}
+                      </span>
+                    ) : (
+                      <span className="server-item__action">
+                        <Icon name="play_arrow" size={18} />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card className="details-card">
+            <div className="card-heading">
+              <Icon name="tune" size={19} />
+              <h3>{t("home.details")}</h3>
+            </div>
+            <dl className="facts">
+              <div>
+                <dt>{t("home.status")}</dt>
+                <dd>{status.running ? t("home.on") : t("home.off")}</dd>
+              </div>
+              <div>
+                <dt>{t("home.uptime")}</dt>
+                <dd>{formatUptime(status.startedAt)}</dd>
+              </div>
+              <div>
+                <dt>PID</dt>
+                <dd className="mono">{status.pid ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>SOCKS</dt>
+                <dd className="mono">{status.socksPort || port}</dd>
+              </div>
+              <div>
+                <dt>HTTP</dt>
+                <dd className="mono">{status.httpPort || port + 1}</dd>
+              </div>
+            </dl>
+          </Card>
+        </section>
+      )}
     </>
   );
 }

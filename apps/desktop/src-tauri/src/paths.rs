@@ -6,6 +6,9 @@ pub struct AppPaths {
     pub data_dir: PathBuf,
     pub db_path: PathBuf,
     pub log_dir: PathBuf,
+    pub core_dir: PathBuf,
+    pub xray_config: PathBuf,
+    pub xray_log: PathBuf,
 }
 
 impl AppPaths {
@@ -14,18 +17,24 @@ impl AppPaths {
             .context("could not resolve XDG data directory")?
             .join("m3vpn");
         let log_dir = data_dir.join("logs");
+        let core_dir = data_dir.join("core");
         let db_path = data_dir.join("m3vpn.db");
         Ok(Self {
+            xray_config: core_dir.join("xray.json"),
+            xray_log: core_dir.join("xray.log"),
             data_dir,
             db_path,
             log_dir,
+            core_dir,
         })
     }
 
     pub fn ensure(&self) -> Result<()> {
         std::fs::create_dir_all(&self.log_dir)?;
+        std::fs::create_dir_all(&self.core_dir)?;
         restrict(&self.data_dir, 0o700)?;
         restrict(&self.log_dir, 0o700)?;
+        restrict(&self.core_dir, 0o700)?;
         Ok(())
     }
 }
