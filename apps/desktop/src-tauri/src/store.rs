@@ -263,6 +263,7 @@ pub struct ServerRow {
     pub profile_name: String,
     pub name: String,
     pub protocol: String,
+    pub engine: String,
     pub host: Option<String>,
     pub port: Option<u16>,
     pub enabled: bool,
@@ -371,12 +372,19 @@ pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<S
          ORDER BY p.created_at DESC, s.sort_index ASC",
     )?;
     let rows = stmt.query_map([profile_id], |row| {
+        let protocol: String = row.get(4)?;
+        let engine = if m3vpn_parser::uses_singbox(&protocol) {
+            "sing-box"
+        } else {
+            "xray"
+        };
         Ok(ServerRow {
             id: row.get(0)?,
             profile_id: row.get(1)?,
             profile_name: row.get(2)?,
             name: row.get(3)?,
-            protocol: row.get(4)?,
+            protocol,
+            engine: engine.to_string(),
             host: row.get(5)?,
             port: row.get::<_, Option<i64>>(6)?.map(|port| port as u16),
             enabled: row.get::<_, i64>(7)? != 0,
@@ -464,6 +472,63 @@ mod tests {
         set(&conn, "mode", "tun").unwrap();
         assert_eq!(get(&conn, "mode").unwrap().as_deref(), Some("tun"));
         assert!(all(&conn).unwrap().contains_key("proxy.active_port"));
+
+        drop(conn);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), suffix));
+        }
+    }
+
+    #[test]
+    fn server_rows_expose_the_engine_that_runs_them() {
+        let path = std::env::temp_dir().join(format!("m3vpn-engine-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let conn = open(&path).expect("open test database");
+        let profile = NewProfile {
+            id: "p1".into(),
+            name: "Test".into(),
+            url: String::new(),
+            url_hidden: true,
+            title: None,
+            description: None,
+            support_url: None,
+            web_page_url: None,
+            update_interval_hours: 24,
+            userinfo: None,
+            created_at: 1,
+            updated_at: 1,
+        };
+        let servers = ["vless", "awg", "hysteria2", "tuic"]
+            .iter()
+            .enumerate()
+            .map(|(index, protocol)| NewServer {
+                id: format!("p1:{index}"),
+                profile_id: "p1".into(),
+                name: (*protocol).into(),
+                protocol: (*protocol).into(),
+                host: Some("example.com".into()),
+                port: Some(443),
+                params_json: None,
+                full_config_json: "{}".into(),
+                sort_index: index as i64,
+            })
+            .collect::<Vec<_>>();
+        save_import(&conn, &profile, &servers).expect("save import");
+
+        let rows = list_servers(&conn, None).expect("list servers");
+        let engines = rows
+            .iter()
+            .map(|row| (row.protocol.as_str(), row.engine.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            engines,
+            vec![
+                ("vless", "xray"),
+                ("awg", "sing-box"),
+                ("hysteria2", "sing-box"),
+                ("tuic", "sing-box"),
+            ]
+        );
 
         drop(conn);
         for suffix in ["", "-wal", "-shm"] {

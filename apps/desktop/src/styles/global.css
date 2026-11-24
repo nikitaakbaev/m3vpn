@@ -1459,6 +1459,20 @@ input[type="number"]::-webkit-inner-spin-button {
   white-space: nowrap;
 }
 
+.engine-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 7%, transparent);
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: var(--m3-font);
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.3px;
+}
+
 .protocol-badge {
   display: inline-flex;
   align-items: center;

@@ -44,7 +44,7 @@ interface AppStore {
   connect: (serverId?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   importSubscription: (url: string, name?: string) => Promise<api.ImportSummary>;
-  importAwg: (conf: string, name?: string) => Promise<api.ImportSummary>;
+  importConfig: (text: string, name?: string) => Promise<api.ImportSummary>;
   measureRtt: () => Promise<void>;
   refreshProfile: (profileId: string) => Promise<api.ImportSummary | null>;
   deleteProfile: (profileId: string) => Promise<void>;
@@ -227,10 +227,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  importAwg: async (conf, name) => {
+  importConfig: async (text, name) => {
     set({ importing: true });
     try {
-      const summary = await api.importAwgConf(conf, name);
+      const summary = await api.importConfig(text, name);
       set({ importing: false });
       await get().refreshData();
       return summary;

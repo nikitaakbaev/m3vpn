@@ -13,13 +13,13 @@ export function SubscriptionsPage() {
   const profiles = useAppStore((state) => state.profiles);
   const importing = useAppStore((state) => state.importing);
   const importSubscription = useAppStore((state) => state.importSubscription);
-  const importAwg = useAppStore((state) => state.importAwg);
+  const importConfig = useAppStore((state) => state.importConfig);
   const deleteProfile = useAppStore((state) => state.deleteProfile);
   const refreshProfile = useAppStore((state) => state.refreshProfile);
   const refreshingId = useAppStore((state) => state.refreshingId);
   const notify = useAppStore((state) => state.notify);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [url, setUrl] = useState("");
+  const [input, setInput] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [lastImport, setLastImport] = useState<ImportSummary | null>(null);
@@ -38,7 +38,7 @@ export function SubscriptionsPage() {
   const closeDialog = () => {
     if (importing) return;
     dialogRef.current?.close();
-    setUrl("");
+    setInput("");
     setName("");
     setError(null);
   };
@@ -46,19 +46,18 @@ export function SubscriptionsPage() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    const text = url.trim();
-    const isAwg = text.includes("[Interface]") || /^(amneziawg|awg):\/\//i.test(text);
-    if (!isAwg && !/^https?:\/\//.test(text)) {
-      setError(t("subs.invalidUrl"));
+    const text = input.trim();
+    if (!text) {
+      setError(t("subs.invalidInput"));
       return;
     }
     try {
-      const summary = isAwg
-        ? await importAwg(text, name.trim() || undefined)
-        : await importSubscription(text, name.trim() || undefined);
+      const summary = /^https?:\/\//i.test(text)
+        ? await importSubscription(text, name.trim() || undefined)
+        : await importConfig(text, name.trim() || undefined);
       setLastImport(summary);
       dialogRef.current?.close();
-      setUrl("");
+      setInput("");
       setName("");
       notify(
         `${t("subs.imported")}: ${summary.servers}` +
@@ -74,7 +73,7 @@ export function SubscriptionsPage() {
       <PageHeader
         title={t("subs.title")}
         subtitle={t("subs.subtitle")}
-        badge={<span className="pill pill--accent">M7</span>}
+        badge={<span className="pill pill--accent">M8</span>}
         actions={
           <Button icon="add_link" onClick={openDialog}>
             {t("subs.add")}
@@ -208,11 +207,10 @@ export function SubscriptionsPage() {
         <div className="chip-row">
           <span className="chip">Full Xray JSON</span>
           <span className="chip">VLESS · Reality</span>
+          <span className="chip">VMess · Trojan · SS</span>
+          <span className="chip">Hysteria2 · TUIC</span>
           <span className="chip">AmneziaWG</span>
-          <span className="chip">Hysteria2</span>
-          <span className="chip">WireGuard</span>
-          <span className="chip">SOCKS5</span>
-          <span className="chip">HTTP</span>
+          <span className="chip">SOCKS5 · HTTP</span>
         </div>
       </Card>
 
@@ -245,9 +243,9 @@ export function SubscriptionsPage() {
               className="m3-input m3-textarea"
               autoFocus
               rows={4}
-              placeholder="https://provider.example/sub/... или [Interface] ..."
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://... · Xray JSON · vless://... · hy2://... · [Interface]"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
               disabled={importing}
             />
             <span className="m3-field__hint">{t("subs.awgHint")}</span>

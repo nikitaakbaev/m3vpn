@@ -151,7 +151,7 @@ pub fn run() {
             commands::open_logs_dir,
             commands::log_frontend,
             commands::import_subscription,
-            commands::import_awg_conf,
+            commands::import_config,
             commands::list_profiles,
             commands::list_servers,
             commands::delete_profile,

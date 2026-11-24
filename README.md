@@ -22,6 +22,9 @@
 - **M7 — готово.** Профили маршрутизации INCY, direct/proxy/block, DoH/DoU,
   geoip/geosite, FakeDNS для AWG и автообновление geo. См.
   [`docs/m7-report.md`](docs/m7-report.md).
+- **M8 — готово.** Полные конфиги без пропусков: Hysteria 2 через sing-box,
+  импорт JSON/share-ссылок из UI, автоматический выбор Xray или sing-box,
+  переключение ядер. См. [`docs/m8-report.md`](docs/m8-report.md).
 
 ## Структура
 

@@ -32,6 +32,7 @@ export interface Server {
   profileName: string;
   name: string;
   protocol: string;
+  engine: "xray" | "sing-box";
   host: string | null;
   port: number | null;
   enabled: boolean;
@@ -195,11 +196,25 @@ let mockServers: Server[] = [
   profileName: "PingBooster",
   name: name as string,
   protocol: "vless",
+  engine: "xray",
   host: host as string,
   port: port as number,
   enabled: true,
   latencyMs: [38, 52, 63, 71, 88, 120][index] ?? null,
 }));
+
+mockServers.push({
+  id: "mock-hysteria2",
+  profileId: "mock-profile",
+  profileName: "PingBooster",
+  name: "🇳🇱 Netherlands · Hysteria2",
+  protocol: "hysteria2",
+  engine: "sing-box",
+  host: "149.33.14.60",
+  port: 8443,
+  enabled: true,
+  latencyMs: null,
+});
 
 let mockStatus: ConnectionStatus = {
   running: false,
@@ -280,13 +295,22 @@ export async function importSubscription(url: string, name?: string): Promise<Im
   return invoke<ImportSummary>("import_subscription", { url, name: name ?? null });
 }
 
-export async function importAwgConf(conf: string, name?: string): Promise<ImportSummary> {
+export async function importConfig(text: string, name?: string): Promise<ImportSummary> {
   if (!isTauri) {
-    if (!conf.includes("[Interface]")) throw new Error("в тексте не найден AmneziaWG .conf");
+    const trimmed = text.trim();
+    if (!trimmed) throw new Error("конфиг пустой");
+    const isAwg = trimmed.includes("[Interface]") || /^(amneziawg|awg):\/\//i.test(trimmed);
+    const protocol = isAwg
+      ? "awg"
+      : /^hysteria2:\/\/|^hy2:\/\//i.test(trimmed)
+        ? "hysteria2"
+        : /^tuic:\/\//i.test(trimmed)
+          ? "tuic"
+          : "vless";
     const profile: Profile = {
-      id: `mock-awg-${Date.now()}`,
-      name: name?.trim() || "AmneziaWG",
-      title: "AmneziaWG",
+      id: `mock-manual-${Date.now()}`,
+      name: name?.trim() || (isAwg ? "AmneziaWG" : "Вручную"),
+      title: isAwg ? "AmneziaWG" : "Вручную",
       serverCount: 1,
       updateIntervalHours: 24,
       userinfo: null,
@@ -302,9 +326,10 @@ export async function importAwgConf(conf: string, name?: string): Promise<Import
         profileId: profile.id,
         profileName: profile.name,
         name: profile.name,
-        protocol: "awg",
-        host: "vpn.example.com",
-        port: 51820,
+        protocol,
+        engine: ["awg", "hysteria2", "tuic"].includes(protocol) ? "sing-box" : "xray",
+        host: "example.com",
+        port: isAwg ? 51820 : 443,
         enabled: true,
         latencyMs: null,
       },
@@ -319,7 +344,7 @@ export async function importAwgConf(conf: string, name?: string): Promise<Import
       notes: [],
     };
   }
-  return invoke<ImportSummary>("import_awg_conf", { conf, name: name ?? null });
+  return invoke<ImportSummary>("import_config", { text, name: name ?? null });
 }
 
 export async function listRoutingProfiles(): Promise<RoutingSummary[]> {
@@ -465,7 +490,7 @@ export async function connectServer(serverId: string): Promise<ConnectionStatus>
       serverName: server.name,
       pid: 4242,
       startedAt: Math.floor(Date.now() / 1000),
-      engine: server.protocol === "awg" ? "sing-box" : "xray",
+      engine: server.engine,
       tun: false,
       error: null,
     };

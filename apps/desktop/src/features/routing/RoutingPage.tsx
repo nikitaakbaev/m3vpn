@@ -86,7 +86,7 @@ export function RoutingPage() {
       <PageHeader
         title={t("routing.title")}
         subtitle={t("routing.subtitle")}
-        badge={<span className="pill pill--accent">M7</span>}
+        badge={<span className="pill pill--accent">M8</span>}
         actions={
           <>
             <Button variant="text" icon="refresh" onClick={() => void loadRouting()}>

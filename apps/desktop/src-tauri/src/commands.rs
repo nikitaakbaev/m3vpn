@@ -170,14 +170,14 @@ pub fn list_servers(
 }
 
 #[tauri::command]
-pub async fn import_awg_conf(
+pub async fn import_config(
     app: AppHandle,
-    conf: String,
+    text: String,
     name: Option<String>,
 ) -> Result<ImportSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        subscription::import_awg(&state.db, &conf, name).map_err(|error| format!("{error:#}"))
+        subscription::import_text(&state.db, &text, name).map_err(|error| format!("{error:#}"))
     })
     .await
     .map_err(|error| error.to_string())?
@@ -247,8 +247,9 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
                 .map_err(|_| "database lock poisoned".to_string())?;
             routing::active(&db).map_err(|error| error.to_string())?
         };
+        let singbox = m3vpn_parser::uses_singbox(&details.protocol);
         if let Some((_, profile)) = active_profile {
-            if details.protocol == "awg" {
+            if singbox {
                 routing::apply_singbox(&mut config, &profile)
                     .map_err(|error| format!("маршрутизация: {error:#}"))?;
             } else {
@@ -257,7 +258,7 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
             }
         }
 
-        let mut status = if details.protocol == "awg" {
+        let mut status = if singbox {
             core::connect_singbox(
                 &state.core,
                 &state.paths,

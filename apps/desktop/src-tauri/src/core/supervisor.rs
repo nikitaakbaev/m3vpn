@@ -766,6 +766,36 @@ mod tests {
         })
     }
 
+    fn direct_singbox_config() -> serde_json::Value {
+        serde_json::json!({
+            "inbounds": [
+                { "type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 10808 }
+            ],
+            "outbounds": [
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": { "final": "direct" }
+        })
+    }
+
+    fn curl_through(socks_port: u16, origin_port: u16) -> String {
+        let output = std::process::Command::new("curl")
+            .arg("-fsS")
+            .arg("--max-time")
+            .arg("10")
+            .arg("--socks5-hostname")
+            .arg(format!("127.0.0.1:{socks_port}"))
+            .arg(format!("http://127.0.0.1:{origin_port}/"))
+            .output()
+            .expect("run curl");
+        assert!(
+            output.status.success(),
+            "curl failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).to_string()
+    }
+
     #[test]
     #[ignore = "requires sidecars and curl"]
     fn backend_survives_short_lived_connect_thread() {
@@ -774,7 +804,7 @@ mod tests {
         let paths = test_paths("keeper-test");
         let sidecars = Sidecars::discover().expect("sidecars");
         let origin_port = origin_server();
-        let socks_port = crate::port::find_free_port(24808).expect("free socks port");
+        let socks_port = crate::port::find_free_port(25008).expect("free socks port");
         let state = Arc::new(Mutex::new(CoreState::new(socks_port)));
 
         {
@@ -815,7 +845,7 @@ mod tests {
         let paths = test_paths("fail-open-test");
         let sidecars = Sidecars::discover().expect("sidecars");
         let origin_port = origin_server();
-        let socks_port = crate::port::find_free_port(25808).expect("free socks port");
+        let socks_port = crate::port::find_free_port(27008).expect("free socks port");
         let state = Mutex::new(CoreState::new(socks_port));
 
         let connected = connect_xray(&state, &paths, &sidecars, "a", "Server A", direct_config())
@@ -858,7 +888,7 @@ mod tests {
         let sidecars = Sidecars::discover().expect("sidecars");
         let size = 4 * 1024 * 1024;
         let origin_port = slow_origin(size);
-        let socks_port = crate::port::find_free_port(23808).expect("free socks port");
+        let socks_port = crate::port::find_free_port(23008).expect("free socks port");
         let state = Mutex::new(CoreState::new(socks_port));
 
         connect_xray(&state, &paths, &sidecars, "a", "Server A", direct_config())
@@ -899,11 +929,46 @@ mod tests {
 
     #[test]
     #[ignore = "requires sidecars and curl"]
+    fn switches_between_xray_and_singbox_backends() {
+        let paths = test_paths("engine-switch-test");
+        let sidecars = Sidecars::discover().expect("sidecars");
+        let origin_port = origin_server();
+        let socks_port = crate::port::find_free_port(29008).expect("free socks port");
+        let state = Mutex::new(CoreState::new(socks_port));
+
+        let status = connect_xray(&state, &paths, &sidecars, "a", "Xray A", direct_config())
+            .expect("connect xray");
+        assert_eq!(status.engine.as_deref(), Some("xray"));
+        assert_eq!(curl_through(socks_port, origin_port), "ok");
+
+        let status = connect_singbox(
+            &state,
+            &paths,
+            &sidecars,
+            "b",
+            "Sing-box B",
+            direct_singbox_config(),
+        )
+        .expect("connect sing-box");
+        assert_eq!(status.engine.as_deref(), Some("sing-box"));
+        assert_eq!(curl_through(socks_port, origin_port), "ok");
+
+        let status = connect_xray(&state, &paths, &sidecars, "c", "Xray C", direct_config())
+            .expect("connect xray again");
+        assert_eq!(status.engine.as_deref(), Some("xray"));
+        assert_eq!(curl_through(socks_port, origin_port), "ok");
+
+        shutdown(&state, &paths);
+        let _ = std::fs::remove_dir_all(&paths.data_dir);
+    }
+
+    #[test]
+    #[ignore = "requires sidecars and curl"]
     fn starts_xray_and_serves_socks() {
         let paths = test_paths("core-test");
         let sidecars = Sidecars::discover().expect("sidecars");
         let origin_port = origin_server();
-        let socks_port = crate::port::find_free_port(21808).expect("free socks port");
+        let socks_port = crate::port::find_free_port(21008).expect("free socks port");
         let state = Mutex::new(CoreState::new(socks_port));
         let config = serde_json::json!({
             "inbounds": [

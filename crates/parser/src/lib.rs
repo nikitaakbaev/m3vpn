@@ -1,7 +1,7 @@
 //! Subscription parsing for m3vpn.
 //!
-//! Supports complete Xray configs (single object or array) and share links.
-//! AmneziaWG containers are detected but deferred until the sing-box core lands.
+//! Supports complete Xray configs (single object or array), share links, and
+//! AmneziaWG/Hysteria 2/TUIC servers that run on hiddify-sing-box.
 
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
@@ -11,6 +11,9 @@ use thiserror::Error;
 
 mod awg;
 mod links;
+mod singbox;
+
+pub use singbox::uses_singbox;
 
 const PROXY_PROTOCOLS: &[&str] = &["vless", "vmess", "trojan", "shadowsocks", "socks", "http"];
 const XRAY_PROTOCOLS: &[&str] = &[
@@ -143,7 +146,30 @@ fn parse_item(item: &Value, result: &mut ParseResult) {
     if item.get("inbounds").is_some() && item.get("outbounds").is_some() {
         match full_config_server(item) {
             Some(server) => result.servers.push(server),
-            None => result.skipped += 1,
+            None => {
+                result.skipped += 1;
+                let hysteria_v1 =
+                    item.get("outbounds")
+                        .and_then(Value::as_array)
+                        .is_some_and(|outbounds| {
+                            outbounds.iter().any(|outbound| {
+                                if outbound.get("protocol").and_then(Value::as_str)
+                                    != Some("hysteria")
+                                {
+                                    return false;
+                                }
+                                outbound
+                                    .pointer("/streamSettings/hysteriaSettings/version")
+                                    .or_else(|| outbound.pointer("/settings/version"))
+                                    .and_then(Value::as_u64)
+                                    == Some(1)
+                            })
+                        });
+                let note = "hysteria: поддерживается только версия 2";
+                if hysteria_v1 && !result.notes.iter().any(|item| item == note) {
+                    result.notes.push(note.to_string());
+                }
+            }
         }
         return;
     }
@@ -179,6 +205,15 @@ fn parse_item(item: &Value, result: &mut ParseResult) {
 
 fn full_config_server(item: &Value) -> Option<ParsedServer> {
     let outbounds = item.get("outbounds")?.as_array()?;
+
+    // Hysteria configs from INCY use Xray-shaped outbounds, but Xray cannot
+    // run Hysteria 2. Convert the whole config for hiddify-sing-box instead.
+    if outbounds
+        .iter()
+        .any(|outbound| outbound.get("protocol").and_then(Value::as_str) == Some("hysteria"))
+    {
+        return singbox::from_xray_hysteria(item);
+    }
 
     let mut protocols = Vec::new();
     for outbound in outbounds {
@@ -354,16 +389,89 @@ mod tests {
         assert_eq!(result.servers[0].port, Some(443));
     }
 
+    fn hysteria_config(remarks: &str, version: u64) -> Value {
+        json!({
+            "remarks": remarks,
+            "inbounds": [
+                { "tag": "socks", "protocol": "socks", "port": 10808, "listen": "127.0.0.1" }
+            ],
+            "outbounds": [
+                {
+                    "tag": "proxy-paid-1",
+                    "protocol": "hysteria",
+                    "settings": { "address": "198.51.100.7", "port": 8443, "version": version },
+                    "streamSettings": {
+                        "network": "hysteria",
+                        "security": "tls",
+                        "hysteriaSettings": { "auth": "secret", "version": version },
+                        "tlsSettings": {
+                            "serverName": "hy.example.com",
+                            "alpn": ["h3"],
+                            "fingerprint": "chrome"
+                        }
+                    }
+                },
+                {
+                    "tag": "proxy-paid-2",
+                    "protocol": "hysteria",
+                    "settings": { "address": "198.51.100.8", "port": 9443, "version": version },
+                    "streamSettings": {
+                        "network": "hysteria",
+                        "security": "tls",
+                        "hysteriaSettings": { "auth": "secret2", "version": version },
+                        "tlsSettings": { "serverName": "hy2.example.com", "alpn": ["h3"] }
+                    }
+                },
+                { "tag": "direct", "protocol": "freedom" },
+                { "tag": "block", "protocol": "blackhole" }
+            ]
+        })
+    }
+
     #[test]
-    fn skips_hysteria_full_configs() {
+    fn converts_hysteria2_full_config_to_singbox() {
         let body = serde_json::to_string(&json!([
-            full_config("Hysteria", "hysteria"),
+            hysteria_config("Hysteria DE", 2),
+            full_config("Reality", "vless")
+        ]))
+        .unwrap();
+        let result = parse_body(&body).unwrap();
+        assert_eq!(result.servers.len(), 2);
+        let server = result
+            .servers
+            .iter()
+            .find(|server| server.protocol == "hysteria2")
+            .unwrap();
+        assert_eq!(server.name, "Hysteria DE");
+        assert_eq!(server.port, Some(8443));
+        assert!(uses_singbox(&server.protocol));
+        assert!(server.config.get("remarks").is_none());
+        let outbounds = server.config["outbounds"].as_array().unwrap();
+        assert_eq!(outbounds.len(), 4);
+        assert_eq!(outbounds[0]["type"], "hysteria2");
+        assert_eq!(outbounds[0]["password"], "secret");
+        assert_eq!(outbounds[0]["tls"]["server_name"], "hy.example.com");
+        assert_eq!(outbounds[1]["server"], "198.51.100.8");
+        assert_eq!(outbounds[2]["type"], "urltest");
+        assert_eq!(outbounds[2]["tag"], "proxy");
+        assert_eq!(
+            outbounds[2]["outbounds"],
+            json!(["proxy-paid-1", "proxy-paid-2"])
+        );
+        assert_eq!(outbounds[3]["tag"], "direct");
+    }
+
+    #[test]
+    fn skips_hysteria_v1_full_configs() {
+        let body = serde_json::to_string(&json!([
+            hysteria_config("Hysteria v1", 1),
             full_config("Reality", "vless")
         ]))
         .unwrap();
         let result = parse_body(&body).unwrap();
         assert_eq!(result.servers.len(), 1);
         assert_eq!(result.skipped, 1);
+        assert!(result.notes.iter().any(|note| note.contains("версия 2")));
     }
 
     #[test]
@@ -373,6 +481,15 @@ mod tests {
         let result = parse_body(&body).unwrap();
         assert_eq!(result.servers.len(), 1);
         assert_eq!(result.servers[0].name, "Base64");
+    }
+
+    #[test]
+    fn routes_singbox_protocols_to_singbox() {
+        assert!(uses_singbox("awg"));
+        assert!(uses_singbox("hysteria2"));
+        assert!(uses_singbox("tuic"));
+        assert!(!uses_singbox("vless"));
+        assert!(!uses_singbox("trojan"));
     }
 
     #[test]

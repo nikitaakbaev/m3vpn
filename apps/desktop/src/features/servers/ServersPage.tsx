@@ -94,6 +94,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             <span className="server-row__name">{server.name}</span>
             <span className="server-row__meta">
               <span className="protocol-badge">{server.protocol}</span>
+              <span className="engine-badge">{server.engine}</span>
               {server.host ? `${server.host}${server.port ? `:${server.port}` : ""}` : t("servers.noHost")}
             </span>
           </span>
@@ -128,7 +129,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
       <PageHeader
         title={t("servers.title")}
         subtitle={t("servers.subtitle")}
-        badge={<span className="pill pill--accent">M7</span>}
+        badge={<span className="pill pill--accent">M8</span>}
         actions={
           <>
             <Button variant="text" icon="refresh" onClick={() => void refreshData()}>

@@ -109,22 +109,20 @@ pub fn import_into(
     )
 }
 
-pub fn import_awg(
+pub fn import_text(
     db: &Mutex<Connection>,
-    conf: &str,
+    text: &str,
     name: Option<String>,
 ) -> Result<ImportSummary> {
-    let parsed = parse_body(conf.trim()).map_err(|error| anyhow!(error.to_string()))?;
-    if !parsed.servers.iter().any(|server| server.protocol == "awg") {
-        bail!("в тексте не найден AmneziaWG .conf");
-    }
+    let parsed = parse_body(text.trim()).map_err(|error| anyhow!(error.to_string()))?;
+    let all_awg = parsed.servers.iter().all(|server| server.protocol == "awg");
     let profile_name = name
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .or_else(|| parsed.servers.first().map(|server| server.name.clone()))
-        .unwrap_or_else(|| "AmneziaWG".to_string());
+        .unwrap_or_else(|| "Вручную".to_string());
 
     save_parsed(
         db,
@@ -132,14 +130,18 @@ pub fn import_awg(
         ProfileMeta {
             name: profile_name,
             url: String::new(),
-            title: Some("AmneziaWG".to_string()),
+            title: Some(if all_awg {
+                "AmneziaWG".to_string()
+            } else {
+                "Вручную".to_string()
+            }),
             description: None,
             support_url: None,
             web_page_url: None,
             update_interval_hours: 24,
             userinfo: None,
             hide_url: true,
-            source: "amneziawg",
+            source: if all_awg { "amneziawg" } else { "manual" },
             existing_id: None,
         },
     )
@@ -397,6 +399,35 @@ mod tests {
     }
 
     #[test]
+    fn imports_hysteria2_link_as_singbox_server() {
+        let path = std::env::temp_dir().join(format!("m3vpn-hy2-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let conn = store::open(&path).expect("open test database");
+        let db = Mutex::new(conn);
+        let line = "hysteria2://secret@example.com:8443?sni=cdn.example.com#HY2 Test";
+        let summary = import_text(&db, line, None).expect("import hysteria2");
+        assert_eq!(summary.servers, 1);
+        assert_eq!(summary.name, "HY2 Test");
+
+        let servers = store::list_servers(&db.lock().unwrap(), None).expect("servers");
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].protocol, "hysteria2");
+        let details = store::server_details(&db.lock().unwrap(), &servers[0].id)
+            .unwrap()
+            .unwrap();
+        let config: serde_json::Value = serde_json::from_str(&details.full_config_json).unwrap();
+        assert_eq!(config["outbounds"][0]["type"], "hysteria2");
+        assert_eq!(
+            config["outbounds"][0]["tls"]["server_name"],
+            "cdn.example.com"
+        );
+        drop(db);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), suffix));
+        }
+    }
+
+    #[test]
     #[ignore = "requires the local AmneziaWG server on 127.0.0.1:51830"]
     fn imports_awg_conf_and_connects_with_singbox() {
         use crate::core::{self, CoreState};
@@ -429,7 +460,7 @@ mod tests {
 
         let conn = store::open(&paths.db_path).expect("open test database");
         let db = Mutex::new(conn);
-        let summary = import_awg(&db, &conf, Some("AWG Test".to_string())).expect("import awg");
+        let summary = import_text(&db, &conf, Some("AWG Test".to_string())).expect("import awg");
         assert_eq!(summary.servers, 1);
 
         let servers = store::list_servers(&db.lock().unwrap(), None).expect("servers");

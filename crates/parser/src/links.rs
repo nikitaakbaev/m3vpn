@@ -6,15 +6,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use url::Url;
 
-const UNSUPPORTED_SCHEMES: &[&str] = &[
-    "hysteria2",
-    "hy2",
-    "hysteria",
-    "tuic",
-    "wireguard",
-    "wg",
-    "ssr",
-];
+const UNSUPPORTED_SCHEMES: &[&str] = &["hysteria", "wireguard", "wg", "ssr"];
 
 pub struct LinkResult {
     pub servers: Vec<ParsedServer>,
@@ -72,6 +64,10 @@ fn parse_line(line: &str) -> Result<ParsedServer, String> {
         parse_socks(line)
     } else if line.starts_with("http://") || line.starts_with("https://") {
         parse_http(line)
+    } else if line.starts_with("hysteria2://") || line.starts_with("hy2://") {
+        parse_hysteria2(line)
+    } else if line.starts_with("tuic://") {
+        parse_tuic(line)
     } else if line.starts_with("amneziawg://") || line.starts_with("awg://") {
         parse_awg_link(line)
     } else {
@@ -290,6 +286,125 @@ fn parse_socks(line: &str) -> Result<ParsedServer, String> {
         "settings": { "servers": [server] }
     });
     Ok(wrap(name, "socks", &host, port, outbound))
+}
+
+fn parse_hysteria2(line: &str) -> Result<ParsedServer, String> {
+    let url = Url::parse(line).map_err(|error| format!("hysteria2: {error}"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "hysteria2: нет хоста".to_string())?
+        .to_string();
+    let port = url.port().unwrap_or(443);
+    let mut password = decode(url.username());
+    if let Some(tail) = url.password() {
+        if !password.is_empty() {
+            password.push(':');
+        }
+        password.push_str(&decode(tail));
+    }
+    if password.is_empty() {
+        return Err("hysteria2: пустой пароль".to_string());
+    }
+    let name = name_from(&url, &format!("Hysteria2 {host}"));
+
+    let mut outbound = json!({
+        "type": "hysteria2",
+        "tag": "proxy",
+        "server": host,
+        "server_port": port,
+        "password": password,
+        "tls": quic_tls(&url, &host)
+    });
+    if let Some(obfs) = param(&url, "obfs").filter(|value| !value.is_empty()) {
+        outbound["obfs"] = json!({
+            "type": obfs,
+            "password": param(&url, "obfs-password").unwrap_or_default()
+        });
+    }
+    Ok(crate::singbox::wrap(
+        name,
+        "hysteria2",
+        &host,
+        port,
+        outbound,
+    ))
+}
+
+fn parse_tuic(line: &str) -> Result<ParsedServer, String> {
+    let url = Url::parse(line).map_err(|error| format!("tuic: {error}"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "tuic: нет хоста".to_string())?
+        .to_string();
+    let port = url.port().unwrap_or(443);
+    let uuid = decode(url.username());
+    let password = url.password().map(decode).unwrap_or_default();
+    if uuid.is_empty() {
+        return Err("tuic: пустой UUID".to_string());
+    }
+    if password.is_empty() {
+        return Err("tuic: пустой пароль".to_string());
+    }
+    let name = name_from(&url, &format!("TUIC {host}"));
+
+    let mut outbound = json!({
+        "type": "tuic",
+        "tag": "proxy",
+        "server": host,
+        "server_port": port,
+        "uuid": uuid,
+        "password": password,
+        "tls": quic_tls(&url, &host)
+    });
+    if let Some(control) = param(&url, "congestion_control") {
+        outbound["congestion_control"] = json!(control);
+    }
+    if let Some(mode) = param(&url, "udp_relay_mode") {
+        outbound["udp_relay_mode"] = json!(mode);
+    }
+    if bool_param(&url, "udp_over_stream") {
+        outbound["udp_over_stream"] = json!(true);
+    }
+    if bool_param(&url, "zero_rtt_handshake") {
+        outbound["zero_rtt_handshake"] = json!(true);
+    }
+    Ok(crate::singbox::wrap(name, "tuic", &host, port, outbound))
+}
+
+fn quic_tls(url: &Url, host: &str) -> Value {
+    let mut tls = json!({
+        "enabled": true,
+        "server_name": param(url, "sni")
+            .or_else(|| param(url, "peer"))
+            .unwrap_or_else(|| host.to_string())
+    });
+    let alpn = param(url, "alpn")
+        .map(|value| {
+            value
+                .split(',')
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|values| !values.is_empty())
+        .unwrap_or_else(|| vec!["h3".to_string()]);
+    tls["alpn"] = json!(alpn);
+    if bool_param(url, "insecure") || bool_param(url, "allow_insecure") {
+        tls["insecure"] = json!(true);
+    }
+    // QUIC protocols in sing-box reject uTLS, so `fingerprint` is ignored.
+    tls
+}
+
+fn bool_param(url: &Url, key: &str) -> bool {
+    param(url, key)
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 fn parse_awg_link(line: &str) -> Result<ParsedServer, String> {
@@ -583,10 +698,42 @@ mod tests {
     }
 
     #[test]
-    fn skips_hysteria2() {
-        let result = parse_lines("hysteria2://pass@example.com:443#HY");
+    fn parses_hysteria2_link() {
+        let line = "hysteria2://secret@example.com:8443?sni=cdn.example.com&insecure=1&obfs=salamander&obfs-password=obfs&alpn=h3#HY2";
+        let result = parse_lines(line);
+        assert_eq!(result.servers.len(), 1);
+        let server = &result.servers[0];
+        assert_eq!(server.protocol, "hysteria2");
+        assert_eq!(server.name, "HY2");
+        assert_eq!(server.port, Some(8443));
+        let outbound = &server.config["outbounds"][0];
+        assert_eq!(outbound["type"], "hysteria2");
+        assert_eq!(outbound["password"], "secret");
+        assert_eq!(outbound["tls"]["server_name"], "cdn.example.com");
+        assert_eq!(outbound["tls"]["insecure"], true);
+        assert_eq!(outbound["obfs"]["type"], "salamander");
+    }
+
+    #[test]
+    fn parses_tuic_link() {
+        let line = "tuic://00000000-0000-4000-8000-000000000003:pw@example.com:443?congestion_control=bbr&udp_relay_mode=quic&sni=example.com#TUIC";
+        let result = parse_lines(line);
+        assert_eq!(result.servers.len(), 1);
+        let server = &result.servers[0];
+        assert_eq!(server.protocol, "tuic");
+        let outbound = &server.config["outbounds"][0];
+        assert_eq!(outbound["type"], "tuic");
+        assert_eq!(outbound["uuid"], "00000000-0000-4000-8000-000000000003");
+        assert_eq!(outbound["password"], "pw");
+        assert_eq!(outbound["congestion_control"], "bbr");
+        assert_eq!(outbound["udp_relay_mode"], "quic");
+    }
+
+    #[test]
+    fn skips_hysteria_v1() {
+        let result = parse_lines("hysteria://pass@example.com:443#HY");
         assert_eq!(result.servers.len(), 0);
         assert_eq!(result.skipped, 1);
-        assert!(result.notes.iter().any(|note| note.contains("hysteria2")));
+        assert!(result.notes.iter().any(|note| note.contains("hysteria")));
     }
 }
