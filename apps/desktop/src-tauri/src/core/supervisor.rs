@@ -621,9 +621,34 @@ fn spawn(
         }
     }
 
-    command
-        .spawn()
-        .with_context(|| format!("spawn {}", binary.display()))
+    // Spawn from a keeper thread that stays alive while the child lives.
+    // PR_SET_PDEATHSIG is tied to the parent *thread*; spawning directly from
+    // a short-lived command thread made Xray die as soon as connect returned.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = command.spawn();
+        let pid = result.as_ref().ok().map(|child| child.id());
+        if tx.send(result).is_err() {
+            return;
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(pid) = pid {
+            let proc_entry = format!("/proc/{pid}");
+            while Path::new(&proc_entry).exists() {
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = pid;
+            std::thread::park();
+        }
+    });
+
+    let result = rx
+        .recv()
+        .map_err(|_| anyhow::anyhow!("core spawner thread died"))?;
+    result.map_err(|error| anyhow::anyhow!("spawn {}: {error}", binary.display()))
 }
 
 pub fn log_tail(path: &Path, lines: usize) -> String {
@@ -724,6 +749,49 @@ mod tests {
                 { "tag": "direct", "protocol": "freedom" }
             ]
         })
+    }
+
+    #[test]
+    #[ignore = "requires sidecars and curl"]
+    fn backend_survives_short_lived_connect_thread() {
+        use std::sync::Arc;
+
+        let paths = test_paths("keeper-test");
+        let sidecars = Sidecars::discover().expect("sidecars");
+        let origin_port = origin_server();
+        let socks_port = crate::port::find_free_port(24808).expect("free socks port");
+        let state = Arc::new(Mutex::new(CoreState::new(socks_port)));
+
+        {
+            let state = Arc::clone(&state);
+            let paths = paths.clone();
+            let sidecars = sidecars.clone();
+            std::thread::spawn(move || {
+                connect_xray(&state, &paths, &sidecars, "a", "Server A", direct_config())
+                    .expect("connect in short-lived thread");
+            })
+            .join()
+            .expect("connect thread");
+        }
+
+        std::thread::sleep(Duration::from_secs(2));
+        let current = status(&state, &paths);
+        assert!(current.running, "backend died with the command thread");
+
+        let output = std::process::Command::new("curl")
+            .arg("-fsS")
+            .arg("--max-time")
+            .arg("10")
+            .arg("--socks5-hostname")
+            .arg(format!("127.0.0.1:{socks_port}"))
+            .arg(format!("http://127.0.0.1:{origin_port}/"))
+            .output()
+            .expect("run curl");
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
+
+        shutdown(&state, &paths);
+        let _ = std::fs::remove_dir_all(&paths.data_dir);
     }
 
     #[test]
