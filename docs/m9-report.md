@@ -56,6 +56,57 @@ INGY-значения выглядят как обычный пинг: 129–543
   `#7A4E8C` → `#7C3AED`;
 - фиолетовая тема теперь использует белый текст, зелёная — тёмный.
 
+## Обновления с личного сервера
+
+Добавлен безопасный механизм обновлений без автоустановки:
+
+- приложение читает `latest.json` по HTTPS;
+- показывает версию, заметки и ссылки на артефакты;
+- требует корректный SHA-256 для каждого артефакта в манифесте;
+- открывает пакет в браузере, но **не запускает установщик сам**;
+- auto-check раз в 6 часов и при запуске.
+
+Настройка в приложении: **Настройки → Обновления → Сервер обновлений**.
+Можно указать URL до `latest.json` или до папки с ним.
+
+Публикация:
+
+```bash
+M3VPN_UPDATE_URL="https://updates.example.com/m3vpn" \
+M3VPN_UPDATE_HOST="user@updates.example.com" \
+M3VPN_UPDATE_PATH="/var/www/updates/m3vpn" \
+M3VPN_UPDATE_NOTES="TUN fixes" \
+bash scripts/publish-update.sh
+```
+
+Скрипт собирает пакеты, создаёт `dist/update/latest.json`, `sha256sums.txt`
+и заливает через `rsync`. Пример nginx и схема сервера —
+в [`packaging/update/README.md`](../packaging/update/README.md).
+
+## Гео-карточка
+
+Карточка «Гео-данные» переведена с flex на grid: иконка, текст и контролы
+больше не разъезжаются. На широком экране всё в одну строку, на узком —
+контролы переносятся отдельной строкой.
+
+## Оптимизация по skill
+
+Установлен безопасный skill **blazing-rust** (MIT, только markdown, без
+исполняемых скриптов): `~/.config/opencode/skills/blazing-rust`.
+
+Замер INGY Ping на 58 серверах, release-сборка:
+
+| Параллельность | Прогоны | Медиана |
+|---|---:|---:|
+| 4 | 21.0 / 18.0 / 23.2 с | 21.0 с |
+| 8 | 10.6 / 8.8 / 10.2 с | 10.2 с |
+
+Изменение: HTTP-пинг ограничен 8 параллельными проверками вместо 4;
+новый default — 8. Работа на сервер не изменилась, число ответивших
+серверов осталось в том же диапазоне. Остальной разрыв — запуск временного
+ядра на каждый сервер; следующий кандидат — пул прогретых probe-ядер, но
+это уже сложнее и не входило в M9.
+
 ## Упаковка
 
 Добавлен `scripts/package-arch.sh`. Он собирает release-приложение и helper,
@@ -101,7 +152,7 @@ sudo usermod -aG m3vpn "$USER"   # затем перелогиниться
 | INGY Ping на реальной подписке | 46/58 responded, 18 с |
 | Hysteria 2 через INGY Ping | 14/15 |
 | INGY/HTTP GET/HTTP HEAD на локальном прокси | OK |
-| App tests | 20/20 + 8 ignored |
+| App tests | 24/24 + 8 ignored |
 | Parser tests | 18/18 |
 | Helper tests | 2/2 |
 | `cargo clippy -D warnings` | OK |
@@ -110,6 +161,8 @@ sudo usermod -aG m3vpn "$USER"   # затем перелогиниться
 | Arch package build | OK |
 | Portable tarball | OK |
 | desktop / AppStream validation | OK |
+| Update manifest + local HTTP test | OK |
+| INGY Ping concurrency 4 → 8 | 21.0 → 10.2 с (медиана) |
 
 ## Ограничения
 
@@ -120,9 +173,9 @@ sudo usermod -aG m3vpn "$USER"   # затем перелогиниться
 - **`.deb` / `.rpm` / AppImage** в этом проходе не собраны: на машине нет
   `dpkg-deb`/`rpmbuild`/AppImage tooling. Скрипт Arch-пакета готов; для
   Debian/Fedora нужен отдельный CI-шаг.
-- **QR, deep links и автообновление приложения** не входят в M9. Это
-  полировка 1.0: нужен Tauri updater, single-instance deep-link handler и
-  генератор QR.
+- **Автоустановка обновлений** не входит в M9: приложение проверяет
+  манифест и открывает пакет в браузере, но не запускает `pacman`/установщик.
+- **QR и deep links** не входят в M9. Это полировка 1.0.
 - TUN по-прежнему требует группу `m3vpn` и повторный вход в сессию.
 - 60 FPS — ограничение WebKitGTK/Wayland.
 
@@ -131,5 +184,5 @@ sudo usermod -aG m3vpn "$USER"   # затем перелогиниться
 1. `.deb`/`.rpm`/AppImage в CI.
 2. QR-коды для share-ссылок.
 3. Deep links `m3vpn://` / `incy://`.
-4. Автообновление приложения.
+4. Автоустановка обновлений (сейчас только проверка и ссылки).
 5. Smoke на чистом Arch/Ubuntu.

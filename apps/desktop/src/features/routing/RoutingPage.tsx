@@ -99,11 +99,11 @@ export function RoutingPage() {
         }
       />
 
-      <Card className="notice-card">
+      <Card className="notice-card notice-card--geo">
         <div className="notice-card__icon">
           <Icon name="route" size={20} filled />
         </div>
-        <div>
+        <div className="geo-card__body">
           <strong>{t("routing.geoTitle")}</strong>
           <p>{t("routing.geoText")}</p>
         </div>

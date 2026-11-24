@@ -15,7 +15,7 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("ping.protocol", "incy"),
     ("ping.display", "both"),
     ("ping.timeout_ms", "3000"),
-    ("ping.concurrency", "4"),
+    ("ping.concurrency", "8"),
     ("ping.samples", "3"),
     ("select.mode", "auto"),
     ("select.tolerance_ms", "50"),
@@ -37,6 +37,8 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("telemetry.enabled", "false"),
     ("routing.active_profile_id", ""),
     ("routing.geo_update_hours", "24"),
+    ("update.url", ""),
+    ("update.autocheck", "true"),
 ];
 
 pub fn open(path: &Path) -> Result<Db> {
@@ -165,6 +167,14 @@ fn seed(conn: &Connection) -> Result<()> {
         set(conn, "ui.theme", "dark")?;
         set(conn, "ui.seed_color", "#22C55E")?;
         set(conn, "ui.theme_migrated", "1")?;
+    }
+    // Proxy latency checks were benchmarked at concurrency 4; 8 cuts the
+    // 58-server INGY run roughly in half without changing the work per server.
+    if get(conn, "ping.concurrency_v2")?.is_none() {
+        if get(conn, "ping.concurrency")?.as_deref() == Some("4") {
+            set(conn, "ping.concurrency", "8")?;
+        }
+        set(conn, "ping.concurrency_v2", "1")?;
     }
     // The first palette used muddy, low-contrast swatches. Move those exact
     // values to their vivid equivalents while keeping custom user colors.

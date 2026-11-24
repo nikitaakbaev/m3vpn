@@ -41,6 +41,7 @@ export default function App() {
   const measureRtt = useAppStore((state) => state.measureRtt);
   const pollStatus = useAppStore((state) => state.pollStatus);
   const checkGeoUpdate = useAppStore((state) => state.checkGeoUpdate);
+  const checkUpdates = useAppStore((state) => state.checkUpdates);
   const t = useT();
   const [page, setPageState] = useState<Page>(pageFromHash);
   const autoTried = useRef(false);
@@ -58,9 +59,10 @@ export default function App() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       void checkGeoUpdate();
+      void checkUpdates(true);
     }, 6 * 60 * 60 * 1000);
     return () => window.clearInterval(timer);
-  }, [checkGeoUpdate]);
+  }, [checkGeoUpdate, checkUpdates]);
 
   useEffect(() => {
     const onHashChange = () => setPageState(pageFromHash());

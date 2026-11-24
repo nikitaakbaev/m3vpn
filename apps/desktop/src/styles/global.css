@@ -2191,11 +2191,23 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 }
 
+.notice-card--geo {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.geo-card__body {
+  min-width: 0;
+}
+
 .geo-controls {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .geo-controls__interval {
@@ -2204,15 +2216,32 @@ input[type="number"]::-webkit-inner-spin-button {
   gap: 8px;
   color: var(--md-sys-color-on-surface-variant);
   font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 1050px) {
+  .notice-card--geo {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .notice-card--geo .geo-controls {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
 }
 
 @media (max-width: 640px) {
-  .geo-controls {
-    width: 100%;
+  .notice-card--geo {
+    align-items: start;
   }
 
-  .geo-controls .m3-button {
-    flex: 1;
+  .notice-card--geo .geo-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notice-card--geo .geo-controls .m3-button {
+    width: 100%;
   }
 }
 
@@ -2366,4 +2395,57 @@ input[type="number"]::-webkit-inner-spin-button {
   .latency-dot {
     display: none;
   }
+}
+
+/* ------------------------------------------------------------- updates */
+
+.update-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--m3-border);
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.update-status.is-available {
+  border-color: color-mix(in srgb, var(--m3-accent) 45%, var(--m3-border));
+  background: color-mix(in srgb, var(--m3-accent) 7%, var(--md-sys-color-surface-container-lowest));
+}
+
+.update-status__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--m3-accent);
+}
+
+.update-status__head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--md-sys-color-on-surface);
+}
+
+.update-status__head strong {
+  font-size: 13px;
+}
+
+.update-status__head span {
+  color: var(--m3-text-muted);
+  font-size: 12px;
+}
+
+.update-status p {
+  margin: 0;
+  color: var(--m3-text-muted);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+.update-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

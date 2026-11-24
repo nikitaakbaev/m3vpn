@@ -27,7 +27,30 @@
   переключение ядер. См. [`docs/m8-report.md`](docs/m8-report.md).
 - **M9 — готово.** INGY Ping (реальный HTTP GET через прокси), настройки
   отображения пинга, новая палитра, Arch-пакет, portable tar.gz, `.desktop`,
-  иконки и AppStream. См. [`docs/m9-report.md`](docs/m9-report.md).
+  иконки, AppStream и проверка обновлений с личного сервера. См.
+  [`docs/m9-report.md`](docs/m9-report.md).
+
+## Обновления
+
+В **Настройки → Обновления** укажи URL личного сервера:
+
+```text
+https://updates.example.com/m3vpn/latest.json
+```
+
+Приложение проверяет манифест по HTTPS, показывает новые версии и ссылки на
+Arch-пакет/portable-архив, но не устанавливает их автоматически.
+
+Публикация на сервер:
+
+```bash
+M3VPN_UPDATE_URL="https://updates.example.com/m3vpn" \
+M3VPN_UPDATE_HOST="user@updates.example.com" \
+M3VPN_UPDATE_PATH="/var/www/updates/m3vpn" \
+bash scripts/publish-update.sh
+```
+
+Схема сервера и пример nginx: [`packaging/update/README.md`](packaging/update/README.md).
 
 ## Структура
 

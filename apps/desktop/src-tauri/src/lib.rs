@@ -10,6 +10,7 @@ mod sidecars;
 mod store;
 mod subscription;
 mod tray;
+mod update;
 
 use core::CoreState;
 use helper_client::HelperClient;
@@ -170,6 +171,8 @@ pub fn run() {
             commands::activate_routing_profile,
             commands::refresh_routing_geo,
             commands::refresh_routing_geo_if_due,
+            commands::check_update,
+            commands::open_external,
         ])
         .setup(|app| {
             {

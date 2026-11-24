@@ -24,6 +24,9 @@ interface AppStore {
   core: api.CoreInfo | null;
   routingProfiles: api.RoutingSummary[];
   routingBusy: boolean;
+  updateInfo: api.UpdateInfo | null;
+  updateBusy: boolean;
+  updateError: string | null;
   rtt: number | null;
   selectedServerId: string | null;
   loaded: boolean;
@@ -59,6 +62,8 @@ interface AppStore {
   activateRouting: (id: string) => Promise<void>;
   refreshGeo: (profileId?: string) => Promise<void>;
   checkGeoUpdate: () => Promise<void>;
+  checkUpdates: (silent?: boolean) => Promise<void>;
+  openUpdateArtifact: (url: string) => Promise<void>;
   notify: (message: string) => void;
   clearError: () => void;
 }
@@ -72,6 +77,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   core: null,
   routingProfiles: [],
   routingBusy: false,
+  updateInfo: null,
+  updateBusy: false,
+  updateError: null,
   rtt: null,
   selectedServerId: null,
   loaded: false,
@@ -97,6 +105,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({ loaded: true });
       void get().loadRouting();
       void get().checkGeoUpdate();
+      if (get().settings["update.autocheck"] !== "false") {
+        void get().checkUpdates(true);
+      }
     } catch (error) {
       set({
         loaded: true,
@@ -503,6 +514,41 @@ export const useAppStore = create<AppStore>((set, get) => ({
       );
     } catch (error) {
       void api.logFrontend("warn", `geo update: ${String(error)}`);
+    }
+  },
+
+  checkUpdates: async (silent = false) => {
+    if (silent && get().settings["update.autocheck"] === "false") return;
+    const url = (get().settings["update.url"] ?? "").trim();
+    if (!url) {
+      set({ updateInfo: null, updateError: null });
+      return;
+    }
+    if (get().updateBusy) return;
+    set({ updateBusy: true, updateError: null });
+    try {
+      const info = await api.checkUpdate(url);
+      set({ updateInfo: info });
+      if (info.available) {
+        get().notify(
+          `${translate(get().settings["ui.language"] as Lang, "update.available")}: ${
+            info.latestVersion ?? ""
+          }`,
+        );
+      }
+    } catch (error) {
+      set({ updateError: String(error) });
+      if (!silent) set({ lastError: String(error) });
+    } finally {
+      set({ updateBusy: false });
+    }
+  },
+
+  openUpdateArtifact: async (url) => {
+    try {
+      await api.openExternal(url);
+    } catch (error) {
+      set({ lastError: String(error) });
     }
   },
 

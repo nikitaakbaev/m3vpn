@@ -25,6 +25,11 @@ export function SettingsPage() {
   const openLogs = useAppStore((state) => state.openLogs);
   const openCoreDir = useAppStore((state) => state.openCoreDir);
   const core = useAppStore((state) => state.core);
+  const updateInfo = useAppStore((state) => state.updateInfo);
+  const updateBusy = useAppStore((state) => state.updateBusy);
+  const updateError = useAppStore((state) => state.updateError);
+  const checkUpdates = useAppStore((state) => state.checkUpdates);
+  const openUpdateArtifact = useAppStore((state) => state.openUpdateArtifact);
   const isConnected = useAppStore((state) => state.status.running);
   const notify = useAppStore((state) => state.notify);
 
@@ -41,6 +46,9 @@ export function SettingsPage() {
     Number(settings["select.tolerance_ratio"] ?? "0.3") * 100,
   );
   const autoWins = Number(settings["select.wins_required"] ?? "2");
+  const updateUrl = settings["update.url"] ?? "";
+  const updateAutocheck = settings["update.autocheck"] !== "false";
+  const currentVersion = info?.version ?? "0.1.0";
   const pingProtocol = settings["ping.protocol"] ?? "incy";
   const pingDisplay = settings["ping.display"] ?? "both";
   const pingUrl = settings["ping.url"] ?? "https://www.gstatic.com/generate_204";
@@ -343,7 +351,7 @@ export function SettingsPage() {
           <div className="settings-row">
             <div className="settings-row__text">
               <strong>{t("settings.concurrency")}</strong>
-              <span>1–32</span>
+              <span>1–32 · HTTP до 8</span>
             </div>
             <input
               className="m3-input m3-input--short"
@@ -441,6 +449,111 @@ export function SettingsPage() {
               onChange={(checked) => void set("startup.autoconnect", checked ? "true" : "false")}
             />
           </div>
+        </Card>
+
+        <Card className="settings-card">
+          <div className="card-heading">
+            <Icon name="system_update" size={20} />
+            <h3>{t("settings.updates")}</h3>
+          </div>
+
+          <div className="settings-row settings-row--column">
+            <div className="settings-row__text">
+              <strong>{t("settings.updateUrl")}</strong>
+              <span>{t("settings.updateUrlHint")}</span>
+            </div>
+            <input
+              className="m3-input"
+              type="url"
+              value={updateUrl}
+              placeholder="https://updates.example.com/m3vpn/latest.json"
+              onChange={(event) => void set("update.url", event.target.value)}
+              onBlur={(event) => void set("update.url", event.target.value.trim())}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.updateAutocheck")}</strong>
+              <span>{t("settings.updateAutocheckHint")}</span>
+            </div>
+            <Switch
+              checked={updateAutocheck}
+              label={t("settings.updateAutocheck")}
+              onChange={(checked) => void set("update.autocheck", checked ? "true" : "false")}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.updateCurrent")}: {currentVersion}</strong>
+              <span>
+                {updateInfo?.latestVersion
+                  ? `${t("settings.updateLatest")}: ${updateInfo.latestVersion}`
+                  : t("settings.updateNotConfigured")}
+              </span>
+            </div>
+            <Button
+              variant="tonal"
+              icon={updateBusy ? "progress_activity" : "sync"}
+              disabled={updateBusy || !updateUrl.trim()}
+              onClick={() => void checkUpdates()}
+            >
+              {updateBusy ? t("settings.updateChecking") : t("settings.updateCheck")}
+            </Button>
+          </div>
+
+          {updateError ? (
+            <div className="form-error" role="alert">
+              <Icon name="error" size={18} filled />
+              <span>{updateError}</span>
+            </div>
+          ) : null}
+
+          {updateInfo?.configured ? (
+            <div className={`update-status${updateInfo.available ? " is-available" : ""}`}>
+              <div className="update-status__head">
+                <Icon
+                  name={updateInfo.available ? "new_releases" : "verified"}
+                  size={20}
+                  filled
+                />
+                <div>
+                  <strong>
+                    {updateInfo.available
+                      ? t("settings.updateAvailable")
+                      : t("settings.updateNoUpdates")}
+                  </strong>
+                  <span>
+                    {t("settings.updateLatest")}: {updateInfo.latestVersion ?? "—"}
+                    {updateInfo.publishedAt
+                      ? ` · ${t("settings.updatePublished")}: ${updateInfo.publishedAt}`
+                      : ""}
+                  </span>
+                </div>
+              </div>
+              {updateInfo.notes ? <p>{updateInfo.notes}</p> : null}
+              {updateInfo.artifacts.length > 0 ? (
+                <div className="update-artifacts">
+                  {updateInfo.artifacts.map((artifact) => (
+                    <Button
+                      key={artifact.kind}
+                      variant="outlined"
+                      icon="download"
+                      title={`sha256: ${artifact.sha256}`}
+                      onClick={() => void openUpdateArtifact(artifact.url)}
+                    >
+                      {artifact.kind === "arch"
+                        ? t("settings.updateArch")
+                        : artifact.kind === "portable"
+                          ? t("settings.updatePortable")
+                          : artifact.kind}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </Card>
 
         <Card className="settings-card">

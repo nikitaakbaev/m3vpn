@@ -4,6 +4,7 @@ use crate::port;
 use crate::routing::{self, GeoStatus, RoutingSummary};
 use crate::store::{ProfileRow, ServerRow};
 use crate::subscription::{self, ImportSummary};
+use crate::update::{self, UpdateInfo};
 use crate::AppState;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -554,6 +555,33 @@ fn now_secs() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[tauri::command]
+pub async fn check_update(app: AppHandle, url: Option<String>) -> Result<UpdateInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let configured = url
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| state.setting("update.url"))
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let Some(url) = configured else {
+            return Ok(update::empty_info());
+        };
+        update::check(&url).map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn open_external(url: String) -> Result<(), String> {
+    let url = url.trim();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("разрешены только http/https ссылки".to_string());
+    }
+    open::that_detached(url).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

@@ -68,6 +68,24 @@ export interface GeoStatus {
   checkedAt: number;
 }
 
+export interface UpdateArtifact {
+  kind: string;
+  url: string;
+  sha256: string;
+  size: number;
+}
+
+export interface UpdateInfo {
+  configured: boolean;
+  currentVersion: string;
+  latestVersion: string | null;
+  available: boolean;
+  notes: string | null;
+  publishedAt: string | null;
+  artifacts: UpdateArtifact[];
+  checkedAt: number;
+}
+
 export interface LatencyResult {
   serverId: string;
   latencyMs: number | null;
@@ -135,7 +153,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "ping.protocol": "incy",
   "ping.display": "both",
   "ping.timeout_ms": "3000",
-  "ping.concurrency": "4",
+  "ping.concurrency": "8",
   "ping.samples": "3",
   "select.mode": "auto",
   "select.tolerance_ms": "50",
@@ -347,6 +365,30 @@ export async function importConfig(text: string, name?: string): Promise<ImportS
     };
   }
   return invoke<ImportSummary>("import_config", { text, name: name ?? null });
+}
+
+export async function checkUpdate(url?: string): Promise<UpdateInfo> {
+  if (!isTauri) {
+    return {
+      configured: Boolean(url?.trim()),
+      currentVersion: "0.1.0",
+      latestVersion: "0.1.0",
+      available: false,
+      notes: null,
+      publishedAt: null,
+      artifacts: [],
+      checkedAt: now,
+    };
+  }
+  return invoke<UpdateInfo>("check_update", { url: url ?? null });
+}
+
+export async function openExternal(url: string): Promise<void> {
+  if (!isTauri) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  await invoke("open_external", { url });
 }
 
 export async function listRoutingProfiles(): Promise<RoutingSummary[]> {

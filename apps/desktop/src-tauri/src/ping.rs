@@ -91,7 +91,7 @@ pub fn probe_all(
     };
 
     let concurrency = if options.mode.uses_proxy() {
-        options.concurrency.clamp(1, 4)
+        options.concurrency.clamp(1, 8)
     } else {
         options.concurrency.clamp(1, 16)
     }
