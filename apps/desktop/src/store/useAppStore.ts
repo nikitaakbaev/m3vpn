@@ -28,6 +28,8 @@ interface AppStore {
   importing: boolean;
   probing: boolean;
   refreshingId: string | null;
+  autoCandidateId: string | null;
+  autoCandidateWins: number;
   toast: string | null;
   lastError: string | null;
   reportedStatusError: string | null;
@@ -65,6 +67,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   importing: false,
   probing: false,
   refreshingId: null,
+  autoCandidateId: null,
+  autoCandidateWins: 0,
   toast: null,
   lastError: null,
   reportedStatusError: null,
@@ -127,7 +131,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   set: async (key, value) => {
-    set((state) => ({ settings: { ...state.settings, [key]: value } }));
+    set((state) => ({
+      settings: { ...state.settings, [key]: value },
+      ...(key === "select.mode" ? { autoCandidateId: null, autoCandidateWins: 0 } : {}),
+    }));
     try {
       await api.setSetting(key, value);
     } catch (error) {
@@ -136,7 +143,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  selectServer: (serverId) => set({ selectedServerId: serverId }),
+  selectServer: (serverId) =>
+    set({
+      selectedServerId: serverId,
+      autoCandidateId: null,
+      autoCandidateWins: 0,
+    }),
 
   connect: async (serverId) => {
     const state = get();
@@ -154,8 +166,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedServerId: target,
         reportedStatusError: null,
         rtt: null,
+        autoCandidateId: null,
+        autoCandidateWins: 0,
       });
       state.notify(`${translate(state.settings["ui.language"] as Lang, "home.on")}: ${status.serverName ?? ""}`);
+      // Give the tunnel a moment, then let auto mode check whether a clearly
+      // faster server is available instead of waiting a whole ping interval.
+      window.setTimeout(() => {
+        void get().probeAll(false, true);
+      }, 5000);
     } catch (error) {
       set({ busy: false, lastError: String(error) });
       void get().refreshData();
@@ -166,7 +185,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ busy: true });
     try {
       const status = await api.disconnectCore();
-      set({ status, busy: false, reportedStatusError: null, rtt: null });
+      set({
+        status,
+        busy: false,
+        reportedStatusError: null,
+        rtt: null,
+        autoCandidateId: null,
+        autoCandidateWins: 0,
+      });
     } catch (error) {
       set({ busy: false, lastError: String(error) });
     }
@@ -258,20 +284,65 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const best = results
         .filter((result) => result.ok && result.latencyMs !== null)
         .sort((left, right) => (left.latencyMs ?? 0) - (right.latencyMs ?? 0))[0];
-      const autoSelect = get().settings["select.mode"] !== "manual";
-      const current = get().servers.find((server) => server.id === get().selectedServerId);
+      const state = get();
+      const lang = state.settings["ui.language"] as Lang;
+      const autoMode = state.settings["select.mode"] !== "manual";
+      const winsRequired = Math.max(
+        1,
+        Number(state.settings["select.wins_required"] ?? "2") || 2,
+      );
+      const toleranceMs = Math.max(0, Number(state.settings["select.tolerance_ms"] ?? "50") || 0);
+      const toleranceRatio = Math.min(
+        1,
+        Math.max(0, Number(state.settings["select.tolerance_ratio"] ?? "0.3") || 0),
+      );
+      const current = state.servers.find(
+        (server) =>
+          server.id ===
+          (state.status.running ? state.status.serverId : state.selectedServerId),
+      );
       const currentLatency = current?.latencyMs ?? Number.POSITIVE_INFINITY;
       const bestLatency = best?.latencyMs ?? Number.POSITIVE_INFINITY;
-      const clearlyBetter = !current || bestLatency < currentLatency * 0.85;
-      if (best && (connectFastest || (autoSelect && !get().status.running && clearlyBetter))) {
-        get().selectServer(best.serverId);
-        if (connectFastest) await get().connect(best.serverId);
+      const clearlyBetter =
+        !current ||
+        bestLatency + toleranceMs < currentLatency ||
+        bestLatency < currentLatency * (1 - toleranceRatio);
+
+      if (connectFastest) {
+        if (!best) {
+          get().notify(translate(lang, "servers.noCandidates"));
+        } else if (state.status.running && state.status.serverId === best.serverId) {
+          get().selectServer(best.serverId);
+          get().notify(translate(lang, "servers.alreadyFastest"));
+        } else {
+          get().selectServer(best.serverId);
+          await get().connect(best.serverId);
+        }
+      } else if (autoMode && best) {
+        if (!state.status.running) {
+          get().selectServer(best.serverId);
+        } else if (best.serverId !== current?.id && clearlyBetter) {
+          const wins = state.autoCandidateId === best.serverId ? state.autoCandidateWins + 1 : 1;
+          if (wins >= winsRequired) {
+            set({ autoCandidateId: null, autoCandidateWins: 0 });
+            await get().connect(best.serverId);
+            const bestServer = state.servers.find((server) => server.id === best.serverId);
+            get().notify(
+              `${translate(lang, "servers.autoSwitched")}: ${bestServer?.name ?? best.serverId}`,
+            );
+          } else {
+            set({ autoCandidateId: best.serverId, autoCandidateWins: wins });
+          }
+        } else {
+          set({ autoCandidateId: null, autoCandidateWins: 0 });
+        }
+      } else {
+        set({ autoCandidateId: null, autoCandidateWins: 0 });
       }
+
       if (!silent) {
         const ok = results.filter((result) => result.ok).length;
-        get().notify(
-          `${translate(get().settings["ui.language"] as Lang, "servers.probe")}: ${ok}/${results.length}`,
-        );
+        get().notify(`${translate(lang, "servers.probe")}: ${ok}/${results.length}`);
       }
     } catch (error) {
       set({ lastError: String(error) });

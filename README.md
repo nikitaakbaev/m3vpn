@@ -14,9 +14,9 @@
   подключение к самому быстрому. См. [`docs/m3-report.md`](docs/m3-report.md).
 - **M4 — готово.** Исправлены зависания, добавлены AmneziaWG через sing-box,
   реальный RTT и второй core. См. [`docs/m4-report.md`](docs/m4-report.md).
-- **M5 — готово.** Front-proxy с hot-switch: смена сервера не рвёт активные
-  соединения, при падении бэкенда трафик уходит в direct. См.
-  [`docs/m5-report.md`](docs/m5-report.md).
+- **M5 — готово.** Front-proxy с hot-switch и авто-переключением на быстрейший:
+  смена сервера не рвёт активные соединения, при падении бэкенда трафик уходит
+  в direct. См. [`docs/m5-report.md`](docs/m5-report.md).
 
 ## Структура
 

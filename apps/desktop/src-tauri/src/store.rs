@@ -17,8 +17,8 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("ping.samples", "3"),
     ("select.mode", "auto"),
     ("select.tolerance_ms", "50"),
-    ("select.tolerance_ratio", "0.3"),
-    ("select.wins_required", "2"),
+    ("select.tolerance_ratio", "0.15"),
+    ("select.wins_required", "1"),
     ("select.failures_to_failover", "2"),
     ("tun.kill_switch", "false"),
     ("tun.strict_route", "false"),
@@ -161,6 +161,19 @@ fn seed(conn: &Connection) -> Result<()> {
         set(conn, "ui.theme", "dark")?;
         set(conn, "ui.seed_color", "#22C55E")?;
         set(conn, "ui.theme_migrated", "1")?;
+    }
+
+    // The first auto-switch tuning was too conservative for real TCP latencies
+    // (30% and two probes). One 15% win is stable with the new hot-switch and
+    // makes the feature actually visible.
+    if get(conn, "select.tuned_v2")?.is_none() {
+        if get(conn, "select.tolerance_ratio")?.as_deref() == Some("0.3") {
+            set(conn, "select.tolerance_ratio", "0.15")?;
+        }
+        if get(conn, "select.wins_required")?.as_deref() == Some("2") {
+            set(conn, "select.wins_required", "1")?;
+        }
+        set(conn, "select.tuned_v2", "1")?;
     }
 
     Ok(())

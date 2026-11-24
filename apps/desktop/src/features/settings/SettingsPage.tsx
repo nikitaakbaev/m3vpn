@@ -30,6 +30,10 @@ export function SettingsPage() {
   const activePort = settings["proxy.active_port"] ?? String(info?.proxyPort ?? 10808);
   const pingEnabled = settings["ping.enabled"] !== "false";
   const selectMode = settings["select.mode"] === "manual" ? "manual" : "auto";
+  const autoTolerance = Math.round(
+    Number(settings["select.tolerance_ratio"] ?? "0.3") * 100,
+  );
+  const autoWins = Number(settings["select.wins_required"] ?? "2");
 
   const saveNumber = (key: string, value: string, min: number, max: number) => {
     const parsed = Number(value);
@@ -251,6 +255,45 @@ export function SettingsPage() {
                 { value: "manual", label: t("settings.selectManual"), icon: "touch_app" },
               ]}
               onChange={(value) => void set("select.mode", value)}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.autoTolerance")}</strong>
+              <span>{t("settings.autoToleranceHint")}</span>
+            </div>
+            <input
+              className="m3-input m3-input--short"
+              type="number"
+              aria-label={t("settings.autoTolerance")}
+              min={1}
+              max={80}
+              value={autoTolerance}
+              onChange={(event) => {
+                const percent = Number(event.target.value);
+                if (!Number.isFinite(percent)) return;
+                const clamped = Math.max(1, Math.min(80, Math.round(percent)));
+                void set("select.tolerance_ratio", (clamped / 100).toFixed(2));
+              }}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.autoWins")}</strong>
+              <span>{t("settings.autoWinsHint")}</span>
+            </div>
+            <input
+              className="m3-input m3-input--short"
+              type="number"
+              aria-label={t("settings.autoWins")}
+              min={1}
+              max={5}
+              value={autoWins}
+              onChange={(event) => {
+                const wins = Number(event.target.value);
+                if (!Number.isFinite(wins)) return;
+                void set("select.wins_required", String(Math.max(1, Math.min(5, Math.round(wins)))));
+              }}
             />
           </div>
           <p className="hint">{t("settings.selectHint")}</p>

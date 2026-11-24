@@ -796,6 +796,48 @@ mod tests {
 
     #[test]
     #[ignore = "requires sidecars and curl"]
+    fn failed_backend_falls_back_to_direct() {
+        let paths = test_paths("fail-open-test");
+        let sidecars = Sidecars::discover().expect("sidecars");
+        let origin_port = origin_server();
+        let socks_port = crate::port::find_free_port(25808).expect("free socks port");
+        let state = Mutex::new(CoreState::new(socks_port));
+
+        let connected = connect_xray(&state, &paths, &sidecars, "a", "Server A", direct_config())
+            .expect("connect");
+        let pid = connected.pid.expect("backend pid");
+
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+        std::thread::sleep(Duration::from_millis(300));
+
+        let failed = status(&state, &paths);
+        assert!(!failed.running);
+        assert!(failed.error.is_some());
+
+        let output = std::process::Command::new("curl")
+            .arg("-fsS")
+            .arg("--max-time")
+            .arg("10")
+            .arg("--socks5-hostname")
+            .arg(format!("127.0.0.1:{socks_port}"))
+            .arg(format!("http://127.0.0.1:{origin_port}/"))
+            .output()
+            .expect("run curl");
+        assert!(
+            output.status.success(),
+            "front proxy did not fail open: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
+
+        shutdown(&state, &paths);
+        let _ = std::fs::remove_dir_all(&paths.data_dir);
+    }
+
+    #[test]
+    #[ignore = "requires sidecars and curl"]
     fn hot_switch_keeps_an_active_download() {
         let paths = test_paths("hot-switch-test");
         let sidecars = Sidecars::discover().expect("sidecars");
