@@ -1,0 +1,10 @@
+/target
+/node_modules
+/dist
+/.secrets
+/sidecars/bin
+*.log
+.DS_Store
+/.tools
+/sidecars/bin
+/sidecars/assets

@@ -1,0 +1,102 @@
+{
+  "generated_at": "2026-11-24",
+  "host": {
+    "os": "CachyOS Linux",
+    "arch": "x86_64",
+    "go": "go1.27.4",
+    "rust": "1.99.1"
+  },
+  "sing_box": {
+    "project": "hiddify/hiddify-sing-box",
+    "branch": "v5",
+    "commit": "1267fe6aac8d11f3a562e8feecad11d11f48f965",
+    "commit_date": "2026-11-22",
+    "build_tags": [
+      "with_gvisor",
+      "with_quic",
+      "with_dhcp",
+      "with_wireguard",
+      "with_utls",
+      "with_clash_api",
+      "badlinkname",
+      "tfogo_checklinkname0",
+      "with_grpc",
+      "with_awg",
+      "with_embedded_tor",
+      "with_openvpn",
+      "with_openconnect",
+      "with_masque",
+      "with_sudoku",
+      "with_call",
+      "with_bond",
+      "with_kcp",
+      "with_xdrive"
+    ],
+    "patches": [
+      {
+        "file": "protocol/hiddify/soar/outbound.go",
+        "change": "abortOnClose.Close: c.Conn.Abort() -> c.Conn.Close()",
+        "reason": "The soar commit expected by the superproject is no longer reachable; the hiddify branch has List() but no Abort(). Temporary local patch, must be revisited before release."
+      }
+    ],
+    "submodules": {
+      "replace/MasterDnsVPN": "a6b693698ee8246ca415a994bb6da40d66dddba7",
+      "replace/amneziawg-go": "a2ae165a1b3f062ce9dd3dc3353ebd1c591847a5",
+      "replace/gvisor": "5618c875fd006f0f1d9b92bc2b16392fb6babc9a",
+      "replace/psiphon-quic-go": "c43fd98d13a8b954ef23fd51c68b238a8d8a780e",
+      "replace/psiphon-tls": "3e697502354da72c121c7eb5266f3819bc8f91bd",
+      "replace/sing": "b40ea077780dbc1babef7d035d4b0fea8d9ad6f2",
+      "replace/sing-mux": "ea35b38fa88181b81914150e9d349e9014645e0d",
+      "replace/sing-tun": "fe80f0918269863a13628e53e4557b038882504f",
+      "replace/sing-vmess": "979150fe9f26c5f4df9c4a9c7e21f2dbec43120a",
+      "replace/soar": "e18587bc9fb62f326124d1f3eb0ceb31708bd077",
+      "replace/tailscale": "4138b20dfb9f5852d043abd8bf9da6c29d5ee53b",
+      "replace/wireguard-go": "32f4b5369c2dff702384168612f83355a09ec177"
+    },
+    "binary": {
+      "path": "sidecars/bin/hiddify-sing-box",
+      "sha256": "64d26201c5dea76d49a399af68be17398430f46d15aedea23cb9c915097e0f0c",
+      "size": 89743587
+    }
+  },
+  "xray": {
+    "project": "XTLS/Xray-core",
+    "version": "v26.11.9",
+    "binary": {
+      "path": "sidecars/bin/xray",
+      "sha256": "e87bce586acdb9136aa5b1f1d9c8db9f1ea1d145b6d86368c7f6f662f9f6a66d",
+      "size": 35434620
+    }
+  },
+  "geo_assets": {
+    "source": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest",
+    "files": {
+      "geoip.dat": {
+        "path": "sidecars/assets/geoip.dat",
+        "sha256": "d4ec4c5e5d5a38c1399964ea9fd8c94288426a3b31b483904b67819fc07f4466",
+        "size": 16503149
+      },
+      "geosite.dat": {
+        "path": "sidecars/assets/geosite.dat",
+        "sha256": "2750ac87489925b493cdfe16a5478b332ecc7e748fc017f9f1a3c63ae30e25ba",
+        "size": 11531643
+      }
+    }
+  },
+  "subscription_probe": {
+    "format": "json array of full Xray configs",
+    "configs": 58,
+    "protocols": ["vless", "hysteria"],
+    "transports": ["tcp+reality", "xhttp+tls"],
+    "features": ["burstObservatory", "leastLoad balancer", "geosite/geoip routing"],
+    "note": "Token is stored only in .secrets/subscription.url (0600) and is not part of this file."
+  },
+  "m0_results": {
+    "build_with_awg": "ok",
+    "xray_full_config_vless_reality": "ok",
+    "singbox_vless_reality": "ok",
+    "amneziawg_handshake_local_server": "ok",
+    "selector_switch_keeps_download": "ok",
+    "tun_restore_after_sigkill_netns": "ok"
+  }
+}
