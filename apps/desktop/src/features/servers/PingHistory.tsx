@@ -4,20 +4,24 @@ interface PingHistoryProps {
   history: PingSample[];
   jitterMs: number | null;
   lossPercent: number;
+  showGraph: boolean;
+  showLoss: boolean;
 }
 
-export function PingHistory({ history, jitterMs, lossPercent }: PingHistoryProps) {
+export function PingHistory({
+  history,
+  jitterMs,
+  lossPercent,
+  showGraph,
+  showLoss,
+}: PingHistoryProps) {
   const points = history
     .filter((sample) => sample.ok && sample.latencyMs !== null)
     .slice(-20)
     .map((sample) => sample.latencyMs as number);
-  if (points.length < 2) {
-    return lossPercent > 0 ? (
-      <span className="ping-history" title={`loss ${lossPercent}%`}>
-        <span className="ping-history__loss">{Math.round(lossPercent)}%</span>
-      </span>
-    ) : null;
-  }
+  const hasLoss = showLoss && lossPercent > 0;
+  if (!showGraph && !hasLoss) return null;
+  if (showGraph && points.length < 2 && !hasLoss) return null;
 
   const width = 54;
   const height = 16;
@@ -43,10 +47,14 @@ export function PingHistory({ history, jitterMs, lossPercent }: PingHistoryProps
 
   return (
     <span className="ping-history" role="img" aria-label={label} title={label}>
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
-        <polyline points={polyline} fill="none" stroke="currentColor" strokeWidth="1.5" />
-      </svg>
-      {lossPercent > 0 ? <span className="ping-history__loss">{Math.round(lossPercent)}%</span> : null}
+      {showGraph && points.length >= 2 ? (
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+          <polyline points={polyline} fill="none" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+      ) : null}
+      {hasLoss ? (
+        <span className="ping-history__loss">{Math.round(lossPercent)}%</span>
+      ) : null}
     </span>
   );
 }

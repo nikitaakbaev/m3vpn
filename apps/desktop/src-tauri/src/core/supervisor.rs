@@ -421,7 +421,7 @@ fn ensure_front(lock: &Mutex<CoreState>, paths: &AppPaths, sidecars: &Sidecars) 
         }
     }
 
-    sidecars.check_singbox()?;
+    sidecars.check_front_singbox()?;
     let (socks_port, http_port) = {
         let guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         (guard.socks_port, guard.http_port)
@@ -433,11 +433,13 @@ fn ensure_front(lock: &Mutex<CoreState>, paths: &AppPaths, sidecars: &Sidecars) 
     let config = front::config(socks_port, http_port, api_port, slot_a, slot_b);
     front::write_config(&config, &paths.front_config)?;
 
+    // Hiddify monitoring can panic on the selector config; the front does not
+    // need it because server health is driven by the app's own probes.
     let mut child = spawn(
-        &sidecars.singbox(),
+        &sidecars.front_singbox(),
         &paths.front_config,
         &paths.front_log,
-        None,
+        Some(("M3VPN_DISABLE_MONITORING", std::path::PathBuf::from("1"))),
     )?;
     if let Err(error) = wait_front(&mut child, &paths.front_log, socks_port, api_port) {
         let _ = child.kill();

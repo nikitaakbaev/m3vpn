@@ -209,10 +209,55 @@ pub async fn refresh_profile(app: AppHandle, profile_id: String) -> Result<Impor
 }
 
 #[tauri::command]
-pub fn traffic_stats(state: State<'_, AppState>) -> Result<core::front::TrafficStats, String> {
-    let port =
-        core::front_api_port(&state.core).ok_or_else(|| "front proxy не запущен".to_string())?;
-    core::front::traffic(port).map_err(|error| format!("{error:#}"))
+pub async fn download_update_artifact(
+    app: AppHandle,
+    url: String,
+    sha256: String,
+    kind: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let directory = state.paths.data_dir.join("updates");
+        update::download_artifact(&directory, &url, &sha256, &kind)
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn install_update_artifact(
+    app: AppHandle,
+    path: String,
+    kind: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let directory = state.paths.data_dir.join("updates");
+        let file = std::fs::canonicalize(&path)
+            .map_err(|error| format!("обновление не найдено: {error}"))?;
+        let directory = std::fs::canonicalize(&directory)
+            .map_err(|error| format!("каталог обновлений не найден: {error}"))?;
+        if !file.starts_with(&directory) {
+            return Err("недопустимый путь обновления".to_string());
+        }
+        update::install_artifact(&file, &kind).map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn traffic_stats(app: AppHandle) -> Result<core::front::TrafficStats, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let port = core::front_api_port(&state.core)
+            .ok_or_else(|| "front proxy не запущен".to_string())?;
+        core::front::traffic(port).map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

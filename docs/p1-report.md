@@ -92,6 +92,12 @@ Post-TUN HTTP:  85.140.80.25    (direct)
 TUN_LIVE_SMOKE_OK
 ```
 
+## Front monitoring
+
+Hiddify monitoring иногда падал с nil dereference на конфиге front-selector.
+Front запускается с `M3VPN_DISABLE_MONITORING=1`; health-проверки делает само
+приложение. Backend/TUN по-прежнему используют monitoring.
+
 ## Релиз
 
 - `v0.2.0` собран, тег поставлен, GitHub Release опубликован.

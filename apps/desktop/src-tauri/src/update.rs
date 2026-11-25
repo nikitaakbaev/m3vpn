@@ -3,6 +3,10 @@ use reqwest::blocking::Client;
 use reqwest::redirect::Policy;
 use serde::Serialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::fs::{self, File};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize)]
@@ -25,6 +29,7 @@ pub struct UpdateInfo {
     pub published_at: Option<String>,
     pub artifacts: Vec<UpdateArtifact>,
     pub release_url: Option<String>,
+    pub preferred_kind: String,
 }
 
 pub fn current_version() -> &'static str {
@@ -41,7 +46,117 @@ pub fn empty_info() -> UpdateInfo {
         published_at: None,
         artifacts: Vec::new(),
         release_url: None,
+        preferred_kind: preferred_kind().to_string(),
     }
+}
+
+pub fn preferred_kind() -> &'static str {
+    if Path::new("/usr/bin/pacman").exists() {
+        "arch"
+    } else if Path::new("/usr/bin/apt-get").exists() {
+        "deb"
+    } else if Path::new("/usr/bin/rpm").exists() {
+        "rpm"
+    } else {
+        "portable"
+    }
+}
+
+/// Downloads a release artifact into the app update cache and verifies its
+/// SHA-256. The URL is restricted to GitHub release assets.
+pub fn download_artifact(directory: &Path, url: &str, sha256: &str, kind: &str) -> Result<PathBuf> {
+    if !url.starts_with("https://github.com/") {
+        bail!("обновление должно скачиваться с GitHub Releases");
+    }
+    if sha256.len() != 64 || !sha256.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        bail!("некорректная SHA-256 артефакта");
+    }
+    let name = url
+        .rsplit('/')
+        .next()
+        .filter(|name| {
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+        })
+        .ok_or_else(|| anyhow::anyhow!("не удалось определить имя артефакта"))?;
+    fs::create_dir_all(directory)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+    }
+    let destination = directory.join(format!("{kind}-{name}"));
+    if destination.exists()
+        && sha256_file(&destination)
+            .map(|hash| hash == sha256)
+            .unwrap_or(false)
+    {
+        return Ok(destination);
+    }
+    let temp = destination.with_extension("part");
+    let _ = fs::remove_file(&temp);
+    let client = Client::builder()
+        .timeout(Duration::from_secs(300))
+        .user_agent(format!("m3vpn/{}/Linux", current_version()))
+        .build()
+        .context("build update download client")?;
+    let mut response = client
+        .get(url)
+        .send()
+        .context("download update")?
+        .error_for_status()
+        .context("update download failed")?;
+    let mut file = File::create(&temp)?;
+    std::io::copy(&mut response, &mut file)?;
+    file.flush()?;
+    let actual = sha256_file(&temp)?;
+    if actual != sha256 {
+        let _ = fs::remove_file(&temp);
+        bail!("SHA-256 обновления не совпала");
+    }
+    fs::rename(&temp, &destination)?;
+    Ok(destination)
+}
+
+pub fn install_artifact(path: &Path, kind: &str) -> Result<()> {
+    if !path.is_file() {
+        bail!("файл обновления не найден");
+    }
+    let mut command = std::process::Command::new("pkexec");
+    command.arg("--disable-internal-agent").arg("--");
+    match kind {
+        "arch" => {
+            command.arg("pacman").arg("-U").arg("--noconfirm");
+        }
+        "deb" => {
+            command.arg("apt-get").arg("install").arg("-y");
+        }
+        _ => bail!("автоустановка поддерживается только для Arch и Debian пакетов"),
+    }
+    command.arg(path);
+    let status = command
+        .status()
+        .context("запустить pkexec (установите polkit/pkexec)")?;
+    if !status.success() {
+        bail!("установка обновления отменена или завершилась ошибкой");
+    }
+    Ok(())
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 pub fn check(repo: &str) -> Result<UpdateInfo> {
@@ -160,6 +275,7 @@ fn parse_release(release: &Value) -> Result<UpdateInfo> {
         published_at,
         artifacts,
         release_url,
+        preferred_kind: preferred_kind().to_string(),
     })
 }
 

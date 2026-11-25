@@ -97,6 +97,16 @@ Checksum ищется в `.sha256` и `.sha256sum`, поэтому файлы ru
 `auto` — значение по умолчанию для новых установок; существующие настройки
 не перезаписываются.
 
+## FakeDNS для Xray
+
+Если в routing-профиле включён `FakeDNS`:
+
+- в Xray-конфиг добавляется `fakedns` с пулом `198.18.0.0/15`;
+- `fakedns` становится первым DNS-сервером;
+- sniffing на SOCKS/mixed inbound получает `destOverride: ["fakedns"]`
+  в дополнение к `http` и `tls`;
+- это позволяет Xray восстанавливать домен по FakeIP.
+
 ## Осталось в P3
 
 1. **Split tunneling** по приложениям (cgroup/UID).
@@ -107,7 +117,7 @@ Checksum ищется в `.sha256` и `.sha256sum`, поэтому файлы ru
 
 | Проверка | Результат |
 |---|---|
-| App tests | 31/31 + 11 ignored |
+| App tests | 36/36 + 13 ignored |
 | Helper tests | 4/4 + 1 ignored |
 | Rule-set download | 3/3 |
 | sing-box check с rule-set | OK |

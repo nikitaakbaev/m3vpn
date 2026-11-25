@@ -2628,6 +2628,13 @@ input[type="number"]::-webkit-inner-spin-button {
   cursor: pointer;
 }
 
+.update-install {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .update-artifacts {
   display: flex;
   flex-wrap: wrap;

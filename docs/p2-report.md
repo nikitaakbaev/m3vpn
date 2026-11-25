@@ -42,13 +42,18 @@ Tauri-команды: `set_server_favorite`, `set_server_tags`.
 - красный badge потерь, если loss > 0;
 - tooltip с jitter и loss.
 
+В настройках два независимых тумблера:
+
+- `ping.graph` — показывать график;
+- `ping.loss` — показывать процент потерь.
+
 Старые замеры удаляются раз в цикл пинга (retention 7 дней).
 
 ## Проверки
 
 | Проверка | Результат |
 |---|---|
-| App tests | 34/34 + 13 ignored |
+| App tests | 36/36 + 13 ignored |
 | Helper tests | 4/4 + 1 ignored |
 | Parser tests | 18/18 |
 | typecheck / build | OK |
@@ -72,7 +77,7 @@ Tauri-команды: `set_server_favorite`, `set_server_tags`.
 
 | Проверка | Результат |
 |---|---|
-| App tests | 34/34 + 13 ignored |
+| App tests | 36/36 + 13 ignored |
 | Helper tests | 4/4 + 1 ignored |
 | Parser tests | 18/18 |
 | typecheck / build | OK |

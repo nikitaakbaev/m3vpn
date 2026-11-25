@@ -499,10 +499,20 @@ fn apply_dns(root: &mut Map<String, Value>, profile: &RoutingProfile) {
         "",
         "8.8.8.8",
     );
-    if remote.is_empty() && domestic.is_empty() && profile.dns_hosts.is_empty() {
+    if remote.is_empty() && domestic.is_empty() && profile.dns_hosts.is_empty() && !profile.fake_dns
+    {
         return;
     }
+    if profile.fake_dns {
+        root.insert(
+            "fakedns".into(),
+            json!({ "ipPool": "198.18.0.0/15", "poolSize": 65535 }),
+        );
+    }
     let mut servers = Vec::new();
+    if profile.fake_dns {
+        servers.push(json!("fakedns"));
+    }
     if !remote.is_empty() {
         servers.push(json!(remote));
     }
@@ -1278,6 +1288,26 @@ mod tests {
             config["dns"]["servers"][0],
             "https://cloudflare-dns.com/dns-query"
         );
+    }
+
+    #[test]
+    fn enables_xray_fakedns() {
+        let value = json!({
+            "Name": "Fake",
+            "FakeDNS": true,
+            "RemoteDNSType": "DoH",
+            "RemoteDNSDomain": "https://cloudflare-dns.com/dns-query"
+        });
+        let profile = profile_from_value(&value);
+        let mut config = json!({
+            "outbounds": [
+                { "tag": "proxy", "protocol": "vless", "settings": {} },
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        });
+        apply_xray(&mut config, &profile).unwrap();
+        assert_eq!(config["fakedns"]["ipPool"], "198.18.0.0/15");
+        assert_eq!(config["dns"]["servers"][0], "fakedns");
     }
 
     #[test]

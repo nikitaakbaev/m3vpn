@@ -42,6 +42,13 @@ impl Sidecars {
         user_core("hiddify-sing-box").unwrap_or_else(|| self.root.join("bin/hiddify-sing-box"))
     }
 
+    /// The front proxy must use the packaged build: it is patched to disable
+    /// the Hiddify monitoring that can panic on the selector config. Updated
+    /// user cores are for backends, not for the front.
+    pub fn front_singbox(&self) -> PathBuf {
+        self.root.join("bin/hiddify-sing-box")
+    }
+
     pub fn assets_dir(&self) -> PathBuf {
         self.root.join("assets")
     }
@@ -63,6 +70,14 @@ impl Sidecars {
         let binary = self.singbox();
         if !binary.exists() {
             bail!("hiddify-sing-box binary is missing at {}", binary.display());
+        }
+        Ok(())
+    }
+
+    pub fn check_front_singbox(&self) -> Result<()> {
+        let binary = self.front_singbox();
+        if !binary.exists() {
+            bail!("front sing-box binary is missing at {}", binary.display());
         }
         Ok(())
     }

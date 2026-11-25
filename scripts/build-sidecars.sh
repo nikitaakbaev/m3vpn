@@ -78,6 +78,19 @@ if grep -q 'c.Conn.Abort()' "$SRC/protocol/hiddify/soar/outbound.go" 2>/dev/null
   fi
 fi
 
+# The front selector triggers a nil dereference in Hiddify's outbound monitoring
+# on some configs. The app disables monitoring for the front with this env flag;
+# backend/TUN cores keep it.
+PATCH2="$ROOT/patches/0002-disable-monitoring.patch"
+if ! grep -q 'M3VPN_DISABLE_MONITORING' "$SRC/box.go" 2>/dev/null; then
+  if git -C "$SRC" apply --check "$PATCH2" 2>/dev/null; then
+    git -C "$SRC" apply "$PATCH2"
+    echo "patched: front monitoring opt-out"
+  else
+    echo "warning: could not apply $PATCH2" >&2
+  fi
+fi
+
 # --- build -----------------------------------------------------------------
 (
   cd "$SRC"

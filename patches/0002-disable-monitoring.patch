@@ -1,0 +1,35 @@
+diff --git a/box.go b/box.go
+index ee83888..eae148f 100644
+--- a/box.go
++++ b/box.go
+@@ -3,6 +3,7 @@ package box
+ import (
+ 	"context"
+ 	"io"
++	"os"
+ 	"sync"
+ 	"time"
+ 
+@@ -513,14 +514,15 @@ func New(options Options) (*Box, error) {
+ 		}
+ 	}
+ 	var ntpService *ntp.Service
+-	monitor, err := monitoring.NewOutboundMonitoring(ctx, logFactory.NewLogger("monitoring"), common.PtrValueOrDefault(experimentalOptions.Monitoring))
+-	if err != nil {
+-		return nil, E.Cause(err, "create outbound monitoring")
++	if os.Getenv("M3VPN_DISABLE_MONITORING") != "1" {
++		monitor, err := monitoring.NewOutboundMonitoring(ctx, logFactory.NewLogger("monitoring"), common.PtrValueOrDefault(experimentalOptions.Monitoring))
++		if err != nil {
++			return nil, E.Cause(err, "create outbound monitoring")
++		}
++		internalServices = append(internalServices, monitor)
++		service.MustRegisterPtr[monitoring.OutboundMonitoring](ctx, monitor)
++		router.AppendTracker(monitor)
+ 	}
+-	internalServices = append(internalServices, monitor)
+-	service.MustRegisterPtr[monitoring.OutboundMonitoring](ctx, monitor)
+-
+-	router.AppendTracker(monitor)
+ 
+ 	if ntpOptions.Enabled {
+ 		if ntpOptions.WriteToSystem {

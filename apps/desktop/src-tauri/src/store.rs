@@ -15,6 +15,8 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("ping.url", "https://www.gstatic.com/generate_204"),
     ("ping.protocol", "fast_http"),
     ("ping.display", "both"),
+    ("ping.graph", "true"),
+    ("ping.loss", "true"),
     ("ping.timeout_ms", "3000"),
     ("ping.concurrency", "8"),
     ("ping.samples", "3"),

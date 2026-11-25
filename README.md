@@ -45,11 +45,13 @@
   чтобы не было утечек.
 - **Быстрый выбор** — Fast HTTP ping, автопереключение с причиной,
   исключения серверов, фильтры, массовые действия, избранное и теги.
-- **История пинга** — sparkline, jitter и packet loss по каждому серверу.
+- **История пинга** — sparkline, jitter и packet loss по каждому серверу;
+  график и процент потерь включаются отдельными тумблерами в настройках.
 - **Traffic-aware switch** — автопереключение ждёт, пока стихнет загрузка
   или стрим; порог настраивается.
 - **Обновления** — приложение, Xray и sing-box проверяются через GitHub
-  Releases; артефакты сопровождаются `SHA256SUMS`.
+  Releases; пакет приложения скачивается с проверкой SHA-256 и ставится
+  одной кнопкой через `pkexec`; артефакты сопровождаются `SHA256SUMS`.
 - **Упаковка** — Arch-пакет, Debian-пакет и portable tar.gz.
 
 ## Скриншоты
@@ -70,7 +72,7 @@
 Скачай `.pkg.tar.zst` из [последнего релиза](https://github.com/nikitaakbaev/m3vpn/releases/latest):
 
 ```bash
-sudo pacman -U m3vpn-0.2.1-1-x86_64.pkg.tar.zst
+sudo pacman -U m3vpn-0.2.2-1-x86_64.pkg.tar.zst
 sudo systemctl enable --now m3vpn-helper
 sudo usermod -aG m3vpn "$USER"
 ```
@@ -80,7 +82,7 @@ sudo usermod -aG m3vpn "$USER"
 ### Debian / Ubuntu
 
 ```bash
-sudo apt install ./m3vpn_0.2.1-1_amd64.deb
+sudo apt install ./m3vpn_0.2.2-1_amd64.deb
 ```
 
 ### Portable
@@ -88,7 +90,7 @@ sudo apt install ./m3vpn_0.2.1-1_amd64.deb
 Portable-архив содержит готовое дерево `/usr`:
 
 ```bash
-sudo tar -xzf m3vpn-0.2.1-linux-x86_64.tar.gz -C /
+sudo tar -xzf m3vpn-0.2.2-linux-x86_64.tar.gz -C /
 sudo systemctl enable --now m3vpn-helper
 ```
 
@@ -142,6 +144,10 @@ front/backend не заворачивался обратно в TUN. TUN-ядр�
 от root и использует `auto_redirect` (TPROXY/nftables) — штатный Linux-путь
 sing-box; `auto_redirect_output_mark` совпадает с меткой app-cgroup.
 
+Front-proxy использует встроенный patched sing-box: в Hiddify monitoring
+есть падение на selector-конфиге, поэтому для front он отключён. Обновляемые
+из GitHub ядра применяются к backend'ам, а не к front/TUN.
+
 ## Разработка
 
 Нужны Rust, Node.js, Go и системные зависимости Tauri/WebKitGTK.
@@ -176,9 +182,9 @@ bash scripts/package-arch.sh
 Результат в `dist/`:
 
 ```text
-m3vpn-0.2.1-1-x86_64.pkg.tar.zst
-m3vpn_0.2.1-1_amd64.deb
-m3vpn-0.2.1-linux-x86_64.tar.gz
+m3vpn-0.2.2-1-x86_64.pkg.tar.zst
+m3vpn_0.2.2-1_amd64.deb
+m3vpn-0.2.2-linux-x86_64.tar.gz
 SHA256SUMS
 ```
 

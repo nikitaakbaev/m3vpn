@@ -158,6 +158,8 @@ pub fn run() {
             commands::list_servers,
             commands::delete_profile,
             commands::traffic_stats,
+            commands::download_update_artifact,
+            commands::install_update_artifact,
             commands::set_server_favorite,
             commands::set_server_tags,
             commands::refresh_profile,

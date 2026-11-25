@@ -108,6 +108,8 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         : "servers.sortGroup";
   const pingMode = settings["ping.protocol"] ?? "fast_http";
   const pingDisplay = (settings["ping.display"] ?? "both") as PingDisplay;
+  const showPingGraph = settings["ping.graph"] !== "false";
+  const showPingLoss = settings["ping.loss"] !== "false";
   const favoriteCount = servers.filter((server) => server.favorite).length;
   const pingLabelKey =
     pingMode === "tcp"
@@ -206,6 +208,8 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
               history={server.history}
               jitterMs={server.jitterMs}
               lossPercent={server.lossPercent}
+              showGraph={showPingGraph}
+              showLoss={showPingLoss}
             />
             <ServerLatency latency={server.latencyMs} display={pingDisplay} />
           </span>

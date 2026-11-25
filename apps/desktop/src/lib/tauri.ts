@@ -117,6 +117,7 @@ export interface UpdateInfo {
   publishedAt: string | null;
   artifacts: UpdateArtifact[];
   releaseUrl: string | null;
+  preferredKind: string;
 }
 
 export interface LatencyResult {
@@ -185,6 +186,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "ping.url": "https://www.gstatic.com/generate_204",
   "ping.protocol": "fast_http",
   "ping.display": "both",
+  "ping.graph": "true",
+  "ping.loss": "true",
   "ping.timeout_ms": "3000",
   "ping.concurrency": "8",
   "ping.samples": "3",
@@ -446,9 +449,24 @@ export async function checkUpdate(repo?: string): Promise<UpdateInfo> {
       publishedAt: null,
       artifacts: [],
       releaseUrl: null,
+      preferredKind: "arch",
     };
   }
   return invoke<UpdateInfo>("check_update", { repo: repo ?? null });
+}
+
+export async function downloadUpdateArtifact(
+  url: string,
+  sha256: string,
+  kind: string,
+): Promise<string> {
+  if (!isTauri) return `/tmp/m3vpn-update-${kind}`;
+  return invoke<string>("download_update_artifact", { url, sha256, kind });
+}
+
+export async function installUpdateArtifact(path: string, kind: string): Promise<void> {
+  if (!isTauri) return;
+  await invoke("install_update_artifact", { path, kind });
 }
 
 export async function openExternal(url: string): Promise<void> {

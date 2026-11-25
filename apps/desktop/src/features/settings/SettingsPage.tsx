@@ -42,6 +42,33 @@ export function SettingsPage() {
 
   const [coreVersions, setCoreVersions] = useState<CoreVersion[]>([]);
   const [coreBusy, setCoreBusy] = useState<string | null>(null);
+  const [updateAction, setUpdateAction] = useState<"download" | "install" | null>(null);
+
+  const preferredArtifact =
+    updateInfo?.artifacts.find((artifact) => artifact.kind === updateInfo.preferredKind) ?? null;
+  const installable =
+    updateInfo?.available === true &&
+    preferredArtifact !== null &&
+    (preferredArtifact.kind === "arch" || preferredArtifact.kind === "deb");
+
+  const installAppUpdate = async () => {
+    if (!preferredArtifact) return;
+    setUpdateAction("download");
+    try {
+      const path = await api.downloadUpdateArtifact(
+        preferredArtifact.url,
+        preferredArtifact.sha256,
+        preferredArtifact.kind,
+      );
+      setUpdateAction("install");
+      await api.installUpdateArtifact(path, preferredArtifact.kind);
+      notify(t("settings.updateInstalled"));
+    } catch (error) {
+      notify(String(error));
+    } finally {
+      setUpdateAction(null);
+    }
+  };
 
   const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
   const seed = settings["ui.seed_color"] ?? "#22C55E";
@@ -346,6 +373,28 @@ export function SettingsPage() {
 
           <div className="settings-row">
             <div className="settings-row__text">
+              <strong>{t("settings.pingGraph")}</strong>
+              <span>{t("settings.pingGraphHint")}</span>
+            </div>
+            <Switch
+              checked={settings["ping.graph"] !== "false"}
+              label={t("settings.pingGraph")}
+              onChange={(checked) => void set("ping.graph", checked ? "true" : "false")}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.pingLoss")}</strong>
+              <span>{t("settings.pingLossHint")}</span>
+            </div>
+            <Switch
+              checked={settings["ping.loss"] !== "false"}
+              label={t("settings.pingLoss")}
+              onChange={(checked) => void set("ping.loss", checked ? "true" : "false")}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
               <strong>{t("settings.interval")}</strong>
               <span>5–1800</span>
             </div>
@@ -647,6 +696,22 @@ export function SettingsPage() {
                   notes={updateInfo.notes}
                   onOpen={(url) => void openUpdateArtifact(url)}
                 />
+              ) : null}
+              {installable ? (
+                <div className="update-install">
+                  <Button
+                    icon="system_update"
+                    disabled={updateAction !== null}
+                    onClick={() => void installAppUpdate()}
+                  >
+                    {updateAction === "download"
+                      ? t("settings.updateDownloading")
+                      : updateAction === "install"
+                        ? t("settings.updateInstalling")
+                        : t("settings.updateInstall")}
+                  </Button>
+                  <span className="hint">{t("settings.updateAdminHint")}</span>
+                </div>
               ) : null}
               {updateInfo.artifacts.length > 0 || updateInfo.releaseUrl ? (
                 <div className="update-artifacts">

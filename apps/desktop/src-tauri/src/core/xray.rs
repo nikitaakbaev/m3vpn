@@ -15,7 +15,8 @@ pub fn patch(
         .ok_or_else(|| anyhow!("Xray config must be a JSON object"))?;
 
     patch_log(root, log_path, log_level);
-    patch_inbounds(root, socks_port, http_port);
+    let fakedns = root.contains_key("fakedns");
+    patch_inbounds(root, socks_port, http_port, fakedns);
     ensure_outbounds(root);
     patch_routing(root, &dns_ips);
 
@@ -57,7 +58,7 @@ fn patch_log(root: &mut Map<String, Value>, log_path: &Path, log_level: &str) {
     log.insert("access".into(), json!(log_path.display().to_string()));
 }
 
-fn patch_inbounds(root: &mut Map<String, Value>, socks_port: u16, http_port: u16) {
+fn patch_inbounds(root: &mut Map<String, Value>, socks_port: u16, http_port: u16, fakedns: bool) {
     let mut inbounds = root.remove("inbounds").unwrap_or_else(|| json!([]));
     if !inbounds.is_array() {
         inbounds = json!([]);
@@ -77,6 +78,14 @@ fn patch_inbounds(root: &mut Map<String, Value>, socks_port: u16, http_port: u16
             "socks" | "mixed" => {
                 inbound["listen"] = json!("127.0.0.1");
                 inbound["port"] = json!(socks_port);
+                inbound["sniffing"] = json!({
+                    "enabled": true,
+                    "destOverride": if fakedns {
+                        json!(["http", "tls", "fakedns"])
+                    } else {
+                        json!(["http", "tls"])
+                    }
+                });
                 has_socks = true;
             }
             "http" => {
@@ -95,7 +104,14 @@ fn patch_inbounds(root: &mut Map<String, Value>, socks_port: u16, http_port: u16
             "listen": "127.0.0.1",
             "port": socks_port,
             "settings": { "auth": "noauth", "udp": true },
-            "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+            "sniffing": {
+                "enabled": true,
+                "destOverride": if fakedns {
+                    json!(["http", "tls", "fakedns"])
+                } else {
+                    json!(["http", "tls"])
+                }
+            }
         }));
     }
     if !has_http {
@@ -256,6 +272,26 @@ mod tests {
             .all(|inbound| inbound["listen"] == "127.0.0.1"));
         assert_eq!(inbounds[0]["port"], 20808);
         assert!(config.get("stats").is_some());
+    }
+
+    #[test]
+    fn enables_fakedns_sniffing() {
+        let mut config = base_config();
+        config["fakedns"] = json!({ "ipPool": "198.18.0.0/15", "poolSize": 65535 });
+        patch(
+            &mut config,
+            20808,
+            20809,
+            std::path::Path::new("/tmp/xray.log"),
+            "warning",
+        )
+        .unwrap();
+        let inbound = &config["inbounds"][0];
+        assert!(inbound["sniffing"]["destOverride"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "fakedns"));
     }
 
     #[test]

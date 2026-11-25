@@ -55,7 +55,7 @@
     },
     "binary": {
       "path": "sidecars/bin/hiddify-sing-box",
-      "sha256": "64d26201c5dea76d49a399af68be17398430f46d15aedea23cb9c915097e0f0c",
+      "sha256": "bdf99606bdb061441a8c15ba763681734336b5eec855de74b004af234db2543e",
       "size": 89743587
     }
   },
