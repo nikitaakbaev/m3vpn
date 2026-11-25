@@ -646,7 +646,19 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
             "rules": [
                 { "action": "sniff" },
                 { "protocol": "dns", "action": "hijack-dns" },
-                { "ip_is_private": true, "outbound": "direct" }
+                {
+                    "ip_cidr": [
+                        "10.0.0.0/8",
+                        "127.0.0.0/8",
+                        "169.254.0.0/16",
+                        "172.16.0.0/12",
+                        "192.168.0.0/16",
+                        "fc00::/7",
+                        "fe80::/10",
+                        "::1/128"
+                    ],
+                    "outbound": "direct"
+                }
             ],
             "final": "proxy",
             "auto_detect_interface": true,
@@ -919,6 +931,7 @@ mod tests {
         assert_eq!(config["route"]["default_mark"], 0x2022);
         assert_eq!(config["dns"]["final"], "dns-bootstrap");
         assert_eq!(config["dns"]["servers"][0]["type"], "https");
+        assert_eq!(config["route"]["rules"][2]["ip_cidr"][0], "10.0.0.0/8");
     }
 
     #[test]

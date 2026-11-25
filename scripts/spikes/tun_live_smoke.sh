@@ -54,7 +54,7 @@ grep -E '8999|900[0-9]|9010' "$WORK/rules.current" || true
 
 echo "route:"; ip route get 1.1.1.1 || true
 echo "DNS:"; timeout 15 getent hosts example.com | sed -n '1,2p'
-echo "HTTP via TUN:"; curl -fsS --max-time 20 https://api.ipify.org; echo
+echo "HTTP via TUN:"; curl -4 -fsS --max-time 20 https://api.ipify.org; echo
 if getent ahostsv6 example.com >/dev/null 2>&1; then
   echo "IPv6 HTTP:"
   curl -6 -fsS --max-time 15 https://api64.ipify.org || echo "IPv6 unavailable"
@@ -83,5 +83,5 @@ if nft list table inet m3vpn >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Post-TUN HTTP:"; curl -fsS --max-time 15 https://api.ipify.org; echo
+echo "Post-TUN HTTP:"; curl -4 -fsS --max-time 15 https://api.ipify.org; echo
 echo "TUN_LIVE_SMOKE_OK"
