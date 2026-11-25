@@ -11,7 +11,13 @@ export function PingHistory({ history, jitterMs, lossPercent }: PingHistoryProps
     .filter((sample) => sample.ok && sample.latencyMs !== null)
     .slice(-20)
     .map((sample) => sample.latencyMs as number);
-  if (points.length < 2) return null;
+  if (points.length < 2) {
+    return lossPercent > 0 ? (
+      <span className="ping-history" title={`loss ${lossPercent}%`}>
+        <span className="ping-history__loss">{Math.round(lossPercent)}%</span>
+      </span>
+    ) : null;
+  }
 
   const width = 54;
   const height = 16;

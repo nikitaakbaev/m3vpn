@@ -92,7 +92,7 @@ Post-TUN HTTP:  85.140.80.25    (direct)
 TUN_LIVE_SMOKE_OK
 ```
 
-## Осталось
+## Релиз
 
-- Собрать финальный пакет с `log.level=warn`.
-- Поставить тег `v0.2.0` и выпустить GitHub Release.
+- `v0.2.0` собран, тег поставлен, GitHub Release опубликован.
+- В `v0.2.1` вошли P2 и IPv6/geo-auto из P3; сам TUN-слой не менялся.

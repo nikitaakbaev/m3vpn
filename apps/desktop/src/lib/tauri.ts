@@ -211,7 +211,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "telemetry.enabled": "false",
   "routing.active_profile_id": "",
   "routing.geo_update_hours": "24",
-  "routing.geo_source": "global",
+  "routing.geo_source": "auto",
   "servers.sort": "group",
   "update.github_repo": "nikitaakbaev/m3vpn",
   "update.autocheck": "true",

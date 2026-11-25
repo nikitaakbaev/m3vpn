@@ -54,10 +54,10 @@ M0–M9 закрыты. Приложение умеет:
 Критерий готовности: после подключения/отключения/убийства helper интернет
 возвращается без ручных команд.
 
-Статус: **P1 закрыт**. Живой smoke прошёл: TUN использует auto_redirect
-(TPROXY), front/backend обходят TUN по app-cgroup mark, UFW пропускает
-`m3vpn0`, DNS и IPv6 проверены, после stop маршруты и правила восстановлены.
-Пакет `v0.2.0` готов к публикации.
+Статус: **P1 закрыт** в `v0.2.0`. Живой smoke прошёл: TUN использует
+auto_redirect (TPROXY), front/backend обходят TUN по app-cgroup mark, UFW
+пропускает `m3vpn0`, DNS и IPv6 проверены, после stop маршруты и правила
+восстановлены.
 
 ## P2 — управление серверами
 
@@ -91,9 +91,9 @@ packet loss и traffic-aware auto-switch через Clash API front-прокси
 
 Оценка: **3–5 дней**.
 
-Статус: sing-box geo rule-sets с локальным кэшем, TUN DNS из профиля
-(DoH/DoU, bootstrap без утечек), список закэшированных категорий в UI.
-Остались split tunneling, IPv6-политика и traffic-aware auto-switch.
+Статус: sing-box geo rule-sets с локальным кэшем, TUN DNS из профиля,
+geo-источники Global/Россия/Авто, список rule-sets в UI и IPv6-политика
+готовы. Остались split tunneling, FakeDNS Xray и UI-проверка DNS-утечек.
 
 ## P4 — упаковка и обновления
 

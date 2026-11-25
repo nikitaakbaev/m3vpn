@@ -540,9 +540,7 @@ pub async fn refresh_routing_geo(
                 .map(|(profile, _)| profile)
                 .ok_or_else(|| "профиль не найден".to_string())?
         };
-        let source = state
-            .setting("routing.geo_source")
-            .unwrap_or_else(|| "global".to_string());
+        let source = effective_geo_source(state.setting("routing.geo_source"));
         let status = routing::update_geo(&state.paths, &profile, &source)
             .map_err(|error| format!("{error:#}"))?;
         let hours = geo_hours(&state);
@@ -595,9 +593,7 @@ pub async fn refresh_routing_geo_if_due(app: AppHandle) -> Result<Option<GeoStat
                 .map(|(profile, _)| profile)
                 .ok_or_else(|| "профиль не найден".to_string())?
         };
-        let source = state
-            .setting("routing.geo_source")
-            .unwrap_or_else(|| "global".to_string());
+        let source = effective_geo_source(state.setting("routing.geo_source"));
         let status = routing::update_geo(&state.paths, &profile, &source)
             .map_err(|error| format!("{error:#}"))?;
         let db = state
@@ -615,6 +611,33 @@ pub async fn refresh_routing_geo_if_due(app: AppHandle) -> Result<Option<GeoStat
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+fn effective_geo_source(setting: Option<String>) -> String {
+    match setting.as_deref() {
+        Some("ru") => "ru".to_string(),
+        Some("auto") => {
+            if prefers_russian_geo() {
+                "ru".to_string()
+            } else {
+                "global".to_string()
+            }
+        }
+        _ => "global".to_string(),
+    }
+}
+
+fn prefers_russian_geo() -> bool {
+    for key in ["LC_ALL", "LANG"] {
+        if let Ok(value) = std::env::var(key) {
+            if value.to_ascii_lowercase().starts_with("ru") {
+                return true;
+            }
+        }
+    }
+    std::fs::read_to_string("/etc/timezone")
+        .map(|value| value.to_ascii_lowercase().contains("moscow"))
+        .unwrap_or(false)
 }
 
 fn geo_hours(state: &AppState) -> i64 {

@@ -277,7 +277,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const clean = [
       ...new Set(
         tags
-          .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
+          .map((tag) => tag.trim().replace(/^#/, "").toLowerCase().slice(0, 32))
           .filter(Boolean),
       ),
     ].slice(0, 8);
