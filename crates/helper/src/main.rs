@@ -16,6 +16,7 @@ const DEFAULT_SINGBOX: &str = "/usr/lib/m3vpn/sidecars/bin/hiddify-sing-box";
 const FRONT_MARK: &str = "0x2022";
 const MARK_TABLE: &str = "m3vpn_mark";
 const TUN_TABLE: &str = "m3vpn_tun";
+const IPV6_TABLE: &str = "m3vpn_ipv6";
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -30,6 +31,8 @@ enum Request {
         dns: Vec<Value>,
         #[serde(default)]
         proxy_pids: Vec<u32>,
+        #[serde(default = "default_ipv6")]
+        ipv6: bool,
     },
     StopTun,
     Status,
@@ -85,7 +88,7 @@ fn main() {
         "panic" => client_command(json!({ "cmd": "panic" })).map(|value| print_json(&value)),
         "start-tun" => client_command(parse_start_args(&args)).map(|value| print_json(&value)),
         "config" => {
-            print_json(&tun_config(10808, &[]));
+            print_json(&tun_config(10808, &[], true));
             Ok(())
         }
         "help" | "--help" | "-h" => {
@@ -113,7 +116,7 @@ fn print_json(value: &Value) {
 
 fn print_help() {
     println!(
-        "m3vpn-helper run | status | stop | panic | restore | config | start-tun --app-pid N --socks-port N [--proxy-pid N ...] [--front-pid N] [--kill-switch]"
+        "m3vpn-helper run | status | stop | panic | restore | config | start-tun --app-pid N --socks-port N [--proxy-pid N ...] [--front-pid N] [--kill-switch] [--no-ipv6]"
     );
 }
 
@@ -168,6 +171,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             kill_switch,
             dns,
             proxy_pids,
+            ipv6,
         } => start_tun(
             &state,
             &run_dir,
@@ -177,6 +181,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             kill_switch,
             &dns,
             &proxy_pids,
+            ipv6,
         ),
         Request::StopTun => stop_tun(&state, &run_dir),
         Request::Status => {
@@ -209,6 +214,7 @@ fn start_tun(
     kill_switch: bool,
     dns: &[Value],
     proxy_pids: &[u32],
+    ipv6: bool,
 ) -> Result<Response> {
     {
         let session = state
@@ -243,10 +249,19 @@ fn start_tun(
         restore_network(run_dir);
         return Err(error);
     }
+    if !ipv6 {
+        if let Err(error) = apply_ipv6_block() {
+            drop(bypass);
+            remove_proxy_mark();
+            remove_tun_input_accept();
+            restore_network(run_dir);
+            return Err(error);
+        }
+    }
     let config_path = run_dir.join("tun.json");
     fs::write(
         &config_path,
-        serde_json::to_string_pretty(&tun_config(socks_port, dns))?,
+        serde_json::to_string_pretty(&tun_config(socks_port, dns, ipv6))?,
     )?;
     set_mode(&config_path, 0o600)?;
 
@@ -453,6 +468,7 @@ fn cleanup_tun_interface() {
     let _ = Command::new("ip").args(["link", "delete", IFACE]).output();
     remove_proxy_mark();
     remove_tun_input_accept();
+    remove_ipv6_block();
     remove_front_bypass();
     for priority in 9000..=9010 {
         loop {
@@ -646,6 +662,50 @@ fn remove_tun_input_accept() {
         .output();
 }
 
+/// Blocks host IPv6 egress while TUN runs with IPv6 disabled. The table has a
+/// higher priority than auto_redirect and UFW, so no IPv6 packet can leak out.
+fn apply_ipv6_block() -> Result<()> {
+    remove_ipv6_block();
+    let commands: &[&[&str]] = &[
+        &["add", "table", "inet", IPV6_TABLE],
+        &[
+            "add",
+            "chain",
+            "inet",
+            IPV6_TABLE,
+            "output",
+            "{ type filter hook output priority -200; policy accept; }",
+        ],
+        &[
+            "add", "rule", "inet", IPV6_TABLE, "output", "meta", "nfproto", "ipv6", "oifname",
+            "lo", "accept",
+        ],
+        &[
+            "add", "rule", "inet", IPV6_TABLE, "output", "meta", "nfproto", "ipv6", "drop",
+        ],
+    ];
+    for args in commands {
+        let output = Command::new("nft")
+            .args(*args)
+            .output()
+            .context("run nft")?;
+        if !output.status.success() {
+            remove_ipv6_block();
+            bail!(
+                "nft IPv6 block failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+    Ok(())
+}
+
+fn remove_ipv6_block() {
+    let _ = Command::new("nft")
+        .args(["delete", "table", "inet", IPV6_TABLE])
+        .output();
+}
+
 fn restore_network(run_dir: &Path) {
     let dir = run_dir.join("snapshot");
     restore_defaults(&dir.join("routes-default.txt"), false);
@@ -696,8 +756,55 @@ fn wait_for_interface(child: &mut Child, run_dir: &Path) -> Result<()> {
     }
 }
 
-fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
+fn tun_config(socks_port: u16, dns: &[Value], ipv6: bool) -> Value {
     let (dns_servers, dns_final) = tun_dns_servers(dns);
+    let address = if ipv6 {
+        json!(["172.19.0.1/30", "fdfe:dcba:9876::1/126"])
+    } else {
+        json!(["172.19.0.1/30"])
+    };
+    let exclude = if ipv6 {
+        json!([
+            "10.0.0.0/8",
+            "169.254.0.0/16",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "fc00::/7",
+            "fe80::/10"
+        ])
+    } else {
+        json!([
+            "10.0.0.0/8",
+            "169.254.0.0/16",
+            "172.16.0.0/12",
+            "192.168.0.0/16"
+        ])
+    };
+    let private_cidrs = if ipv6 {
+        json!([
+            "10.0.0.0/8",
+            "127.0.0.0/8",
+            "169.254.0.0/16",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "fc00::/7",
+            "fe80::/10",
+            "::1/128"
+        ])
+    } else {
+        json!([
+            "10.0.0.0/8",
+            "127.0.0.0/8",
+            "169.254.0.0/16",
+            "172.16.0.0/12",
+            "192.168.0.0/16"
+        ])
+    };
+    let proxy_cidrs = if ipv6 {
+        json!(["0.0.0.0/0", "::/0"])
+    } else {
+        json!(["0.0.0.0/0"])
+    };
     json!({
         "log": { "level": "warn", "timestamp": true },
         "dns": {
@@ -708,7 +815,7 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
             "type": "tun",
             "tag": "tun-in",
             "interface_name": IFACE,
-            "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+            "address": address,
             "auto_route": true,
             "auto_redirect": true,
             "auto_redirect_output_mark": 0x2022,
@@ -716,14 +823,7 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
             "stack": "gvisor",
             "gso": false,
             "mtu": 9000,
-            "route_exclude_address": [
-                "10.0.0.0/8",
-                "169.254.0.0/16",
-                "172.16.0.0/12",
-                "192.168.0.0/16",
-                "fc00::/7",
-                "fe80::/10"
-            ]
+            "route_exclude_address": exclude
         }],
         "outbounds": [
             {
@@ -739,20 +839,11 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
                 { "action": "sniff" },
                 { "protocol": "dns", "action": "hijack-dns" },
                 {
-                    "ip_cidr": [
-                        "10.0.0.0/8",
-                        "127.0.0.0/8",
-                        "169.254.0.0/16",
-                        "172.16.0.0/12",
-                        "192.168.0.0/16",
-                        "fc00::/7",
-                        "fe80::/10",
-                        "::1/128"
-                    ],
+                    "ip_cidr": private_cidrs,
                     "outbound": "direct"
                 },
                 {
-                    "ip_cidr": ["0.0.0.0/0", "::/0"],
+                    "ip_cidr": proxy_cidrs,
                     "outbound": "proxy"
                 }
             ],
@@ -964,11 +1055,16 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
     Ok(())
 }
 
+fn default_ipv6() -> bool {
+    true
+}
+
 fn parse_start_args(args: &[String]) -> Value {
     let mut app_pid = 0u32;
     let mut front_pid: Option<u32> = None;
     let mut socks_port = 0u16;
     let mut kill_switch = false;
+    let mut ipv6 = true;
     let mut proxy_pids: Vec<u32> = Vec::new();
     let mut iter = args.iter().skip(2);
     while let Some(arg) = iter.next() {
@@ -979,6 +1075,7 @@ fn parse_start_args(args: &[String]) -> Value {
             }
             "--socks-port" => socks_port = iter.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             "--kill-switch" => kill_switch = true,
+            "--no-ipv6" => ipv6 = false,
             "--proxy-pid" => {
                 if let Some(pid) = iter.next().and_then(|v| v.parse().ok()) {
                     proxy_pids.push(pid);
@@ -993,7 +1090,8 @@ fn parse_start_args(args: &[String]) -> Value {
         "front_pid": front_pid,
         "socks_port": socks_port,
         "kill_switch": kill_switch,
-        "proxy_pids": proxy_pids
+        "proxy_pids": proxy_pids,
+        "ipv6": ipv6
     })
 }
 
@@ -1025,7 +1123,7 @@ mod tests {
 
     #[test]
     fn tun_config_routes_through_front_socks() {
-        let config = tun_config(10808, &[]);
+        let config = tun_config(10808, &[], true);
         assert_eq!(config["inbounds"][0]["type"], "tun");
         assert_eq!(config["inbounds"][0]["interface_name"], IFACE);
         assert_eq!(config["outbounds"][0]["type"], "socks");
@@ -1041,13 +1139,34 @@ mod tests {
     }
 
     #[test]
+    fn tun_config_can_disable_ipv6() {
+        let config = tun_config(10808, &[], false);
+        assert_eq!(
+            config["inbounds"][0]["address"].as_array().unwrap().len(),
+            1
+        );
+        assert!(config["inbounds"][0]["route_exclude_address"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|value| !value.as_str().unwrap().contains(':')));
+        assert_eq!(
+            config["route"]["rules"][3]["ip_cidr"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
     fn tun_config_uses_profile_dns() {
         let dns = vec![
             json!({ "type": "https", "server": "cloudflare-dns.com", "path": "/dns-query" }),
             json!({ "type": "udp", "server": "9.9.9.9" }),
             json!({ "type": "bogus", "server": "1.0.0.1" }),
         ];
-        let config = tun_config(10808, &dns);
+        let config = tun_config(10808, &dns, true);
         let servers = config["dns"]["servers"].as_array().unwrap();
         assert_eq!(servers.len(), 3);
         assert_eq!(config["dns"]["final"], "dns-0");
@@ -1064,7 +1183,7 @@ mod tests {
             json!({ "type": "https", "server": "cloudflare-dns.com", "path": "/dns-query" }),
             json!({ "type": "udp", "server": "9.9.9.9" }),
         ];
-        let config = tun_config(10808, &dns);
+        let config = tun_config(10808, &dns, true);
         let dir = std::env::temp_dir().join(format!("m3vpn-tun-check-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("tun.json");

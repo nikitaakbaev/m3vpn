@@ -245,6 +245,18 @@ export function SettingsPage() {
               onChange={(checked) => void set("tun.kill_switch", checked ? "true" : "false")}
             />
           </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.tunIpv6")}</strong>
+              <span>{t("settings.tunIpv6Hint")}</span>
+            </div>
+            <Switch
+              checked={settings["tun.ipv6"] !== "false"}
+              disabled={!helperAvailable}
+              label={t("settings.tunIpv6")}
+              onChange={(checked) => void set("tun.ipv6", checked ? "true" : "false")}
+            />
+          </div>
 
           <div className="settings-row">
             <div className="settings-row__text">

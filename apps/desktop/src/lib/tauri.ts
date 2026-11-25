@@ -196,6 +196,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "select.traffic_guard_kbps": "256",
   "select.failures_to_failover": "2",
   "tun.kill_switch": "false",
+  "tun.ipv6": "true",
   "tun.strict_route": "false",
   "proxy.system": "false",
   "proxy.port": "10808",

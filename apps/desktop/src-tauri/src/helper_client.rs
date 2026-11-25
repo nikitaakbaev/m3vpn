@@ -28,6 +28,7 @@ impl HelperClient {
         self.socket.exists()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn start_tun(
         &self,
         app_pid: u32,
@@ -36,6 +37,7 @@ impl HelperClient {
         kill_switch: bool,
         dns: &[Value],
         proxy_pids: &[u32],
+        ipv6: bool,
     ) -> Result<()> {
         self.call(json!({
             "cmd": "start_tun",
@@ -44,7 +46,8 @@ impl HelperClient {
             "socks_port": socks_port,
             "kill_switch": kill_switch,
             "dns": dns,
-            "proxy_pids": proxy_pids
+            "proxy_pids": proxy_pids,
+            "ipv6": ipv6
         }))
         .map(|_| ())
     }
