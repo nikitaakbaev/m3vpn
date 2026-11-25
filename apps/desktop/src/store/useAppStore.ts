@@ -42,6 +42,7 @@ interface AppStore {
   reportedStatusError: string | null;
   load: () => Promise<void>;
   refreshData: () => Promise<void>;
+  refreshCore: () => Promise<void>;
   pollStatus: () => Promise<void>;
   set: (key: string, value: string) => Promise<void>;
   selectServer: (serverId: string) => void;
@@ -153,6 +154,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (error) {
       set({ lastError: String(error) });
       void api.logFrontend("error", `failed to refresh data: ${String(error)}`);
+    }
+  },
+
+  refreshCore: async () => {
+    try {
+      const core = await api.coreInfo();
+      set({ core });
+    } catch (error) {
+      set({ lastError: String(error) });
     }
   },
 

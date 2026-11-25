@@ -13,7 +13,7 @@
       and an optional TUN mode through a privileged helper.
     </p>
   </description>
-  <url type="homepage">https://github.com/shizunaru/m3vpn</url>
+  <url type="homepage">https://github.com/nikitaakbaev/m3vpn</url>
   <developer id="cc.m3vpn">
     <name>m3vpn</name>
   </developer>

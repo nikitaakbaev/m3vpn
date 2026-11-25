@@ -31,3 +31,6 @@ reqwest = { version = "0.13", default-features = false, features = ["blocking", 
 base64 = "0.23"
 m3vpn-parser = { path = "../../../crates/parser" }
 sha2 = "0.10"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"

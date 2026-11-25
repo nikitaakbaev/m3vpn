@@ -1,4 +1,5 @@
 use crate::core::{self, ConnectionStatus};
+use crate::cores;
 use crate::ping::{self, LatencyResult, PingMode, PingOptions};
 use crate::port;
 use crate::routing::{self, GeoStatus, RoutingSummary};
@@ -457,6 +458,30 @@ pub fn routing_rule_sets(state: State<'_, AppState>) -> Vec<routing::RuleSetStat
 }
 
 #[tauri::command]
+pub async fn check_core_updates(app: AppHandle) -> Result<Vec<cores::CoreVersion>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let sidecars = state
+            .sidecars
+            .as_ref()
+            .ok_or_else(|| "ядра не найдены".to_string())?;
+        Ok(cores::check(&state.paths, sidecars))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn update_core(app: AppHandle, kind: String) -> Result<cores::CoreVersion, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        cores::update_core(&state.paths, &kind).map_err(|error| format!("{error:#}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub async fn refresh_routing_geo(
     app: AppHandle,
     profile_id: Option<String>,
@@ -480,8 +505,11 @@ pub async fn refresh_routing_geo(
                 .map(|(profile, _)| profile)
                 .ok_or_else(|| "профиль не найден".to_string())?
         };
-        let status =
-            routing::update_geo(&state.paths, &profile).map_err(|error| format!("{error:#}"))?;
+        let source = state
+            .setting("routing.geo_source")
+            .unwrap_or_else(|| "global".to_string());
+        let status = routing::update_geo(&state.paths, &profile, &source)
+            .map_err(|error| format!("{error:#}"))?;
         let hours = geo_hours(&state);
         let db = state
             .db
@@ -532,8 +560,11 @@ pub async fn refresh_routing_geo_if_due(app: AppHandle) -> Result<Option<GeoStat
                 .map(|(profile, _)| profile)
                 .ok_or_else(|| "профиль не найден".to_string())?
         };
-        let status =
-            routing::update_geo(&state.paths, &profile).map_err(|error| format!("{error:#}"))?;
+        let source = state
+            .setting("routing.geo_source")
+            .unwrap_or_else(|| "global".to_string());
+        let status = routing::update_geo(&state.paths, &profile, &source)
+            .map_err(|error| format!("{error:#}"))?;
         let db = state
             .db
             .lock()

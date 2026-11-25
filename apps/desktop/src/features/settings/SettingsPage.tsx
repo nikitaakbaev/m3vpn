@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
@@ -8,6 +9,8 @@ import { Icon } from "../../components/Icon";
 import { useAppStore, useT } from "../../store/useAppStore";
 import { ReleaseNotes } from "./ReleaseNotes";
 import type { ThemeMode } from "../../theme";
+import type { CoreVersion } from "../../lib/tauri";
+import * as api from "../../lib/tauri";
 
 const SWATCHES = ["#22C55E", "#2563EB", "#7C3AED", "#EA580C", "#0F766E", "#CA8A04"];
 
@@ -25,6 +28,8 @@ export function SettingsPage() {
   const pickPort = useAppStore((state) => state.pickPort);
   const openLogs = useAppStore((state) => state.openLogs);
   const openCoreDir = useAppStore((state) => state.openCoreDir);
+  const refreshCore = useAppStore((state) => state.refreshCore);
+  const notify = useAppStore((state) => state.notify);
   const core = useAppStore((state) => state.core);
   const updateInfo = useAppStore((state) => state.updateInfo);
   const updateBusy = useAppStore((state) => state.updateBusy);
@@ -34,7 +39,9 @@ export function SettingsPage() {
   const isConnected = useAppStore((state) => state.status.running);
   const connect = useAppStore((state) => state.connect);
   const disconnect = useAppStore((state) => state.disconnect);
-  const notify = useAppStore((state) => state.notify);
+
+  const [coreVersions, setCoreVersions] = useState<CoreVersion[]>([]);
+  const [coreBusy, setCoreBusy] = useState<string | null>(null);
 
   const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
   const seed = settings["ui.seed_color"] ?? "#22C55E";
@@ -76,6 +83,31 @@ export function SettingsPage() {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return;
     void set(key, String(Math.max(min, Math.min(max, Math.round(parsed)))));
+  };
+
+  const checkCoreVersions = async () => {
+    setCoreBusy("check");
+    try {
+      setCoreVersions(await api.checkCoreUpdates());
+    } catch (error) {
+      notify(String(error));
+    } finally {
+      setCoreBusy(null);
+    }
+  };
+
+  const installCore = async (kind: string) => {
+    setCoreBusy(kind);
+    try {
+      const info = await api.updateCore(kind);
+      setCoreVersions((current) => current.map((item) => (item.kind === kind ? info : item)));
+      await refreshCore();
+      notify(t("settings.coreUpdated"));
+    } catch (error) {
+      notify(String(error));
+    } finally {
+      setCoreBusy(null);
+    }
   };
 
   return (
@@ -627,6 +659,51 @@ export function SettingsPage() {
               <span>{core?.singboxVersion ?? "—"}</span>
             </div>
             <span className={`status-dot${core?.singboxAvailable ? " is-on" : ""}`} />
+          </div>
+          <div className="settings-row settings-row--column">
+            <div className="settings-row__text">
+              <strong>{t("settings.coreUpdates")}</strong>
+              <span>{t("settings.coreUpdatesHint")}</span>
+            </div>
+            {coreVersions.length > 0 ? (
+              <div className="core-updates">
+                {coreVersions.map((item) => (
+                  <div key={item.kind} className="core-update">
+                    <div className="core-update__text">
+                      <strong>{item.kind === "xray" ? "Xray" : "sing-box"}</strong>
+                      <span>
+                        {item.installed ?? "—"} → {item.latest ?? "—"}
+                      </span>
+                      {item.error ? <span className="form-error-text">{item.error}</span> : null}
+                    </div>
+                    {item.updateAvailable ? (
+                      <Button
+                        variant="tonal"
+                        icon="download"
+                        disabled={coreBusy !== null}
+                        onClick={() => void installCore(item.kind)}
+                      >
+                        {coreBusy === item.kind
+                          ? t("settings.coreUpdating")
+                          : t("settings.coreUpdate")}
+                      </Button>
+                    ) : (
+                      <span className="chip chip--success">{t("settings.coreCurrent")}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div>
+              <Button
+                variant="outlined"
+                icon="sync"
+                disabled={coreBusy !== null}
+                onClick={() => void checkCoreVersions()}
+              >
+                {coreBusy === "check" ? t("settings.updateChecking") : t("settings.coreCheck")}
+              </Button>
+            </div>
           </div>
           <div className="settings-row">
             <div className="settings-row__text">

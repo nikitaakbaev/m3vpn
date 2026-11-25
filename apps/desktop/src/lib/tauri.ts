@@ -63,6 +63,15 @@ export interface RoutingSummary {
   profileJson: string;
 }
 
+export interface CoreVersion {
+  kind: string;
+  installed: string | null;
+  latest: string | null;
+  updateAvailable: boolean;
+  checkedAt: number;
+  error: string | null;
+}
+
 export interface RuleSetStatus {
   tag: string;
   bytes: number;
@@ -182,6 +191,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "telemetry.enabled": "false",
   "routing.active_profile_id": "",
   "routing.geo_update_hours": "24",
+  "routing.geo_source": "global",
   "servers.sort": "group",
   "update.github_repo": "nikitaakbaev/m3vpn",
   "update.autocheck": "true",
@@ -481,6 +491,44 @@ export async function refreshRoutingGeo(profileId?: string): Promise<GeoStatus> 
     return { geoipBytes: 16_503_149, geositeBytes: 11_531_643, checkedAt: now };
   }
   return invoke<GeoStatus>("refresh_routing_geo", { profileId: profileId ?? null });
+}
+
+export async function checkCoreUpdates(): Promise<CoreVersion[]> {
+  if (!isTauri) {
+    return [
+      {
+        kind: "xray",
+        installed: "26.11.9",
+        latest: "26.11.9",
+        updateAvailable: false,
+        checkedAt: now,
+        error: null,
+      },
+      {
+        kind: "singbox",
+        installed: "1.13.0.h5",
+        latest: "1.13.0.h5",
+        updateAvailable: false,
+        checkedAt: now,
+        error: null,
+      },
+    ];
+  }
+  return invoke<CoreVersion[]>("check_core_updates");
+}
+
+export async function updateCore(kind: string): Promise<CoreVersion> {
+  if (!isTauri) {
+    return {
+      kind,
+      installed: kind === "xray" ? "26.11.9" : "1.13.0.h5",
+      latest: kind === "xray" ? "26.11.9" : "1.13.0.h5",
+      updateAvailable: false,
+      checkedAt: now,
+      error: null,
+    };
+  }
+  return invoke<CoreVersion>("update_core", { kind });
 }
 
 export async function listRoutingRuleSets(): Promise<RuleSetStatus[]> {

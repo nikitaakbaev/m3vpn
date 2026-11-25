@@ -182,7 +182,7 @@ fn artifact_kind(name: &str) -> Option<&'static str> {
     }
 }
 
-fn is_newer(latest: &str, current: &str) -> bool {
+pub(crate) fn is_newer(latest: &str, current: &str) -> bool {
     let latest = version_parts(latest);
     let current = version_parts(current);
     let length = latest.len().max(current.len());

@@ -35,11 +35,11 @@ impl Sidecars {
     }
 
     pub fn xray(&self) -> PathBuf {
-        self.root.join("bin/xray")
+        user_core("xray").unwrap_or_else(|| self.root.join("bin/xray"))
     }
 
     pub fn singbox(&self) -> PathBuf {
-        self.root.join("bin/hiddify-sing-box")
+        user_core("hiddify-sing-box").unwrap_or_else(|| self.root.join("bin/hiddify-sing-box"))
     }
 
     pub fn assets_dir(&self) -> PathBuf {
@@ -74,6 +74,16 @@ impl Sidecars {
     pub fn singbox_version(&self) -> Result<String> {
         version_of(&self.singbox()).context("run hiddify-sing-box version")
     }
+}
+
+/// Cores updated through GitHub live in the user data directory and take
+/// precedence over the copies shipped with the package.
+fn user_core(name: &str) -> Option<PathBuf> {
+    let path = dirs::data_dir()?.join("m3vpn/cores").join(name);
+    path.metadata()
+        .ok()
+        .filter(|metadata| metadata.is_file() && metadata.len() > 0)
+        .map(|_| path)
 }
 
 fn version_of(binary: &std::path::Path) -> Result<String> {

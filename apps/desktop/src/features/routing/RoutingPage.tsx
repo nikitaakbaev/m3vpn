@@ -36,6 +36,7 @@ export function RoutingPage() {
 
   const active = profiles.find((profile) => profile.active) ?? null;
   const geoHours = Number(settings["routing.geo_update_hours"] ?? "24");
+  const geoSource = settings["routing.geo_source"] === "ru" ? "ru" : "global";
 
   const openImport = () => {
     setError(null);
@@ -123,6 +124,18 @@ export function RoutingPage() {
           )}
         </div>
         <div className="geo-controls">
+          <label className="geo-controls__interval">
+            <span>{t("routing.geoSource")}</span>
+            <select
+              className="m3-input m3-input--short"
+              value={geoSource}
+              aria-label={t("routing.geoSource")}
+              onChange={(event) => void setSetting("routing.geo_source", event.target.value)}
+            >
+              <option value="global">{t("routing.geoGlobal")}</option>
+              <option value="ru">{t("routing.geoRussia")}</option>
+            </select>
+          </label>
           <label className="geo-controls__interval">
             <span>{t("routing.geoEvery")}</span>
             <select

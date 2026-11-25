@@ -43,6 +43,8 @@ install -Dm644 "$ROOT/packaging/linux/cc.m3vpn.desktop" \
   "$STAGE/usr/share/applications/cc.m3vpn.desktop"
 install -Dm644 "$ROOT/packaging/linux/cc.m3vpn.desktop.metainfo.xml" \
   "$STAGE/usr/share/metainfo/cc.m3vpn.desktop.metainfo.xml"
+install -Dm644 "$ROOT/LICENSE" \
+  "$STAGE/usr/share/licenses/m3vpn/LICENSE"
 install -Dm644 "$ROOT/packaging/linux/THIRD-PARTY.md" \
   "$STAGE/usr/share/doc/m3vpn/THIRD-PARTY.md"
 install -Dm644 "$ROOT/.tools/hiddify-sing-box/LICENSE" \
@@ -61,6 +63,9 @@ echo "==> portable tarball"
 mkdir -p "$DIST"
 tar -C "$STAGE" -czf "$DIST/m3vpn-$VERSION-linux-x86_64.tar.gz" .
 
+echo "==> Debian package"
+bash scripts/package-deb.sh "$STAGE" "$DIST" "$VERSION"
+
 echo "==> Arch package"
 sed -i "s/^pkgver=.*/pkgver=$VERSION/" "$ROOT/packaging/arch/PKGBUILD"
 (
@@ -68,6 +73,12 @@ sed -i "s/^pkgver=.*/pkgver=$VERSION/" "$ROOT/packaging/arch/PKGBUILD"
   rm -f m3vpn-*.pkg.tar.zst
   makepkg -f --nodeps
   cp m3vpn-*.pkg.tar.zst "$DIST/"
+)
+
+echo "==> checksums"
+(
+  cd "$DIST"
+  sha256sum m3vpn-*.pkg.tar.zst m3vpn-*.tar.gz m3vpn_*.deb > SHA256SUMS
 )
 
 echo "==> artifacts"

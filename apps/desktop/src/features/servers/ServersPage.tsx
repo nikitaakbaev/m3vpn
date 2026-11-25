@@ -140,15 +140,23 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
     return (
       <div
         key={server.id}
-        className={`server-row${selected ? " is-selected" : ""}${connected ? " is-connected" : ""}`}
+        className={`server-row${selected ? " is-selected" : ""}${connected ? " is-connected" : ""}${
+          bulk && checked ? " is-bulk-selected" : ""
+        }`}
       >
         <button
           type="button"
           className="server-row__main"
-          aria-pressed={selected}
-          onClick={() => selectServer(server.id)}
+          aria-pressed={bulk ? checked : selected}
+          onClick={() => (bulk ? toggleSelected(server.id) : selectServer(server.id))}
         >
-          <span className="radio" aria-hidden="true" />
+          {bulk ? (
+            <span className={`bulk-check${checked ? " is-on" : ""}`} aria-hidden="true">
+              {checked ? <Icon name="check" size={14} /> : null}
+            </span>
+          ) : (
+            <span className="radio" aria-hidden="true" />
+          )}
           <span className="server-row__body">
             <span className="server-row__name">{server.name}</span>
             <span className="server-row__meta">
@@ -176,6 +184,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
           <Icon name={server.excluded ? "visibility" : "visibility_off"} size={18} />
         </button>
         <Button
+          className="server-row__action"
           variant={connected ? "tonal" : "outlined"}
           icon={connected ? "stop_circle" : "play_arrow"}
           disabled={busy}

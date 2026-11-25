@@ -17,6 +17,10 @@ const DEFAULT_GEOIP: &str =
     "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat";
 const DEFAULT_GEOSITE: &str =
     "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat";
+const RU_GEOIP: &str =
+    "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat";
+const RU_GEOSITE: &str =
+    "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat";
 
 #[derive(Clone, Debug, Default)]
 pub struct RoutingProfile {
@@ -1115,19 +1119,24 @@ pub fn ensure_seed_geo(paths: &AppPaths, sidecars: &Sidecars) -> Result<()> {
     Ok(())
 }
 
-pub fn update_geo(paths: &AppPaths, profile: &RoutingProfile) -> Result<GeoStatus> {
+pub fn update_geo(paths: &AppPaths, profile: &RoutingProfile, source: &str) -> Result<GeoStatus> {
     std::fs::create_dir_all(&paths.geo_dir)?;
+    let (default_geoip, default_geosite) = if source == "ru" {
+        (RU_GEOIP, RU_GEOSITE)
+    } else {
+        (DEFAULT_GEOIP, DEFAULT_GEOSITE)
+    };
     let client = Client::builder()
         .timeout(Duration::from_secs(120))
         .user_agent(format!("m3vpn/{}/Linux", env!("CARGO_PKG_VERSION")))
         .build()?;
     let geoip_url = if profile.geoip_url.is_empty() {
-        DEFAULT_GEOIP
+        default_geoip
     } else {
         profile.geoip_url.as_str()
     };
     let geosite_url = if profile.geosite_url.is_empty() {
-        DEFAULT_GEOSITE
+        default_geosite
     } else {
         profile.geosite_url.as_str()
     };
@@ -1144,20 +1153,23 @@ pub fn update_geo(paths: &AppPaths, profile: &RoutingProfile) -> Result<GeoStatu
 }
 
 fn download_asset(client: &Client, url: &str, destination: &Path) -> Result<()> {
-    let checksum_url = format!("{url}.sha256");
-    let expected = client
-        .get(&checksum_url)
-        .send()
-        .ok()
-        .filter(|response| response.status().is_success())
-        .and_then(|response| response.text().ok())
-        .map(|text| {
-            text.split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_ascii_lowercase()
-        })
-        .filter(|text| text.len() == 64);
+    let expected = [format!("{url}.sha256"), format!("{url}.sha256sum")]
+        .iter()
+        .find_map(|checksum_url| {
+            client
+                .get(checksum_url)
+                .send()
+                .ok()
+                .filter(|response| response.status().is_success())
+                .and_then(|response| response.text().ok())
+                .map(|text| {
+                    text.split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_ascii_lowercase()
+                })
+                .filter(|text| text.len() == 64)
+        });
 
     if let Some(expected) = expected.as_deref() {
         if destination.exists() {
