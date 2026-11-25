@@ -132,9 +132,9 @@ helper запускает его от root, поэтому пользовате�
 
 Прокси-ядра запускаются непривилегированно и наследуют systemd-cgroup
 приложения. Helper помечает эту cgroup через nftables, чтобы транспорт
-front/backend не заворачивался обратно в TUN. `SO_MARK` из непривилегированного
-процесса не используется; TUN-ядро запускается helper'ом от root и ставит
-`route.default_mark` само.
+front/backend не заворачивался обратно в TUN. TUN-ядро запускается helper'ом
+от root и использует `auto_redirect` (TPROXY/nftables) — штатный Linux-путь
+sing-box; `auto_redirect_output_mark` совпадает с меткой app-cgroup.
 
 ## Разработка
 

@@ -67,7 +67,6 @@ fi
 
 "$HELPER" stop
 trap - EXIT
-rm -rf "$WORK"
 
 if ip link show m3vpn0 >/dev/null 2>&1; then
   echo "m3vpn0 still exists after stop" >&2
@@ -84,4 +83,5 @@ if nft list table inet m3vpn >/dev/null 2>&1; then
 fi
 
 echo "Post-TUN HTTP:"; curl -4 -fsS --max-time 15 https://api.ipify.org; echo
+rm -rf "$WORK"
 echo "TUN_LIVE_SMOKE_OK"
