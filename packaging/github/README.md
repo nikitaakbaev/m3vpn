@@ -28,8 +28,8 @@ The script builds the Arch package and portable archive, creates tag
 `v<version>`, and uploads:
 
 ```text
-m3vpn-0.1.1-1-x86_64.pkg.tar.zst
-m3vpn-0.1.1-linux-x86_64.tar.gz
+m3vpn-0.2.0-1-x86_64.pkg.tar.zst
+m3vpn-0.2.0-linux-x86_64.tar.gz
 ```
 
 The tag must not already exist. Bump `apps/desktop/src-tauri/tauri.conf.json`
@@ -52,8 +52,8 @@ from the tag and compares numeric versions.
 ## Install on Arch
 
 ```bash
-curl -LO https://github.com/nikitaakbaev/m3vpn/releases/latest/download/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
-sudo pacman -U m3vpn-0.1.1-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/nikitaakbaev/m3vpn/releases/latest/download/m3vpn-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U m3vpn-0.2.0-1-x86_64.pkg.tar.zst
 ```
 
 For a private repository, use a self-hosted update endpoint instead; the

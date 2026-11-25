@@ -73,6 +73,10 @@ if ! ip link show m3vpn0 >/dev/null 2>&1; then
 fi
 echo "TUN interface and policy rules:"
 ip rule show
+if ! ip rule show | grep -q "fwmark 0x2022 lookup main"; then
+  echo "front bypass rule is missing" >&2
+  exit 1
+fi
 
 if ! timeout 10s "$HELPER" stop; then
   echo "helper stop failed" >&2
@@ -94,6 +98,26 @@ if ! diff -u "\$WORK/routes.before" "\$WORK/routes.after"; then
 fi
 if ! diff -u "\$WORK/rules.before" "\$WORK/rules.after"; then
   echo "ip rules were not restored" >&2
+  exit 1
+fi
+
+"$HELPER" start-tun --app-pid \$\$ --front-pid \$FRONT_PID --socks-port 10808 --kill-switch >/dev/null
+for _ in \$(seq 1 100); do
+  ip link show m3vpn0 >/dev/null 2>&1 && break
+  sleep 0.1
+done
+ip link show m3vpn0 >/dev/null
+if ! nft list table inet m3vpn 2>/dev/null | grep -q "0x00002022"; then
+  echo "kill switch does not allow the front mark" >&2
+  exit 1
+fi
+"$HELPER" stop >/dev/null
+if nft list table inet m3vpn >/dev/null 2>&1; then
+  echo "kill switch table remains after stop" >&2
+  exit 1
+fi
+if ip rule show | grep -qE "fwmark 0x2022|8999|900[0-9]|9010"; then
+  echo "policy rules remain after kill-switch stop" >&2
   exit 1
 fi
 

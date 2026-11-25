@@ -1,6 +1,6 @@
 [package]
 name = "m3vpn"
-version = "0.1.1"
+version = "0.2.0"
 description = "Material 3 proxy client for Linux"
 authors = ["m3vpn"]
 edition = "2021"

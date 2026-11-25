@@ -9,6 +9,7 @@ pub fn patch(config: &mut Value, socks_port: u16, api_port: u16) -> Result<()> {
 
     patch_inbounds(root, socks_port);
     patch_api(root, api_port);
+    patch_routing_mark(root);
     Ok(())
 }
 
@@ -54,6 +55,17 @@ fn patch_inbounds(root: &mut Map<String, Value>, socks_port: u16) {
     root.insert("inbounds".into(), json!(inbounds));
 }
 
+fn patch_routing_mark(root: &mut Map<String, Value>) {
+    let route = root.entry("route").or_insert_with(|| json!({}));
+    if !route.is_object() {
+        *route = json!({});
+    }
+    route
+        .as_object_mut()
+        .expect("route object")
+        .insert("default_mark".into(), json!(crate::core::ROUTING_MARK));
+}
+
 fn patch_api(root: &mut Map<String, Value>, api_port: u16) {
     let experimental = root.entry("experimental").or_insert_with(|| json!({}));
     if !experimental.is_object() {
@@ -96,6 +108,13 @@ mod tests {
             config["experimental"]["clash_api"]["external_controller"],
             "127.0.0.1:29090"
         );
+    }
+
+    #[test]
+    fn marks_singbox_routes_to_bypass_tun() {
+        let mut config = json!({ "outbounds": [] });
+        patch(&mut config, 20808, 29090).unwrap();
+        assert_eq!(config["route"]["default_mark"], crate::core::ROUTING_MARK);
     }
 
     #[test]

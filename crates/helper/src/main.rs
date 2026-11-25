@@ -13,6 +13,7 @@ const IFACE: &str = "m3vpn0";
 const DEFAULT_SOCKET: &str = "/run/m3vpn/helper.sock";
 const DEFAULT_RUN_DIR: &str = "/run/m3vpn";
 const DEFAULT_SINGBOX: &str = "/usr/lib/m3vpn/sidecars/bin/hiddify-sing-box";
+const FRONT_MARK: &str = "0x2022";
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -213,6 +214,7 @@ fn start_tun(
     }
 
     snapshot(run_dir)?;
+    let bypass = install_front_bypass()?;
     let config_path = run_dir.join("tun.json");
     fs::write(
         &config_path,
@@ -257,11 +259,22 @@ fn start_tun(
         "front_pid": front_pid,
         "kill_switch": kill_switch
     });
-    fs::write(
-        run_dir.join("active.json"),
-        serde_json::to_string_pretty(&active)?,
-    )?;
-    set_mode(&run_dir.join("active.json"), 0o600)?;
+    let active_result: Result<()> = (|| {
+        fs::write(
+            run_dir.join("active.json"),
+            serde_json::to_string_pretty(&active)?,
+        )?;
+        set_mode(&run_dir.join("active.json"), 0o600)?;
+        Ok(())
+    })();
+    if let Err(error) = active_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = remove_kill_switch();
+        cleanup_tun_interface();
+        restore_network(run_dir);
+        return Err(error);
+    }
 
     {
         let mut session = state
@@ -269,6 +282,7 @@ fn start_tun(
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         *session = Some(TunSession { child, kill_switch });
     }
+    std::mem::forget(bypass);
 
     let state = Arc::clone(state);
     let run_dir = run_dir.to_path_buf();
@@ -281,12 +295,23 @@ fn start_tun(
             let _ = stop_tun(&state, &run_dir);
             break;
         }
-        let running = {
-            let session = state
+        let (running, core_exited) = {
+            let mut session = state
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            session.is_some()
+            match session.as_mut() {
+                Some(session) => (
+                    true,
+                    matches!(session.child.try_wait(), Ok(Some(_)) | Err(_)),
+                ),
+                None => (false, false),
+            }
         };
+        if core_exited {
+            eprintln!("m3vpn-helper: TUN core exited, restoring network");
+            let _ = stop_tun(&state, &run_dir);
+            break;
+        }
         if !running {
             break;
         }
@@ -359,8 +384,46 @@ fn snapshot(run_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+struct FrontBypass;
+
+impl Drop for FrontBypass {
+    fn drop(&mut self) {
+        remove_front_bypass();
+    }
+}
+
+fn install_front_bypass() -> Result<FrontBypass> {
+    let _ = Command::new("ip")
+        .args([
+            "rule", "del", "fwmark", FRONT_MARK, "lookup", "main", "priority", "8999",
+        ])
+        .output();
+    let output = Command::new("ip")
+        .args([
+            "rule", "add", "fwmark", FRONT_MARK, "lookup", "main", "priority", "8999",
+        ])
+        .output()
+        .context("add TUN bypass rule")?;
+    if !output.status.success() {
+        bail!(
+            "ip rule add failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(FrontBypass)
+}
+
+fn remove_front_bypass() {
+    let _ = Command::new("ip")
+        .args([
+            "rule", "del", "fwmark", FRONT_MARK, "lookup", "main", "priority", "8999",
+        ])
+        .output();
+}
+
 fn cleanup_tun_interface() {
     let _ = Command::new("ip").args(["link", "delete", IFACE]).output();
+    remove_front_bypass();
     for priority in 9000..=9010 {
         loop {
             let output = Command::new("ip")
@@ -507,6 +570,9 @@ fn apply_kill_switch() -> Result<()> {
             "daddr",
             "{ fc00::/7, fe80::/10 }",
             "accept",
+        ],
+        &[
+            "add", "rule", "inet", "m3vpn", "output", "meta", "mark", FRONT_MARK, "accept",
         ],
         &[
             "add",

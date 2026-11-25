@@ -31,6 +31,8 @@ export function SettingsPage() {
   const checkUpdates = useAppStore((state) => state.checkUpdates);
   const openUpdateArtifact = useAppStore((state) => state.openUpdateArtifact);
   const isConnected = useAppStore((state) => state.status.running);
+  const connect = useAppStore((state) => state.connect);
+  const disconnect = useAppStore((state) => state.disconnect);
   const notify = useAppStore((state) => state.notify);
 
   const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
@@ -165,7 +167,17 @@ export function SettingsPage() {
                 { value: "proxy", label: t("home.proxy"), icon: "public" },
                 { value: "tun", label: t("home.tun"), icon: "shield", disabled: !helperAvailable },
               ]}
-              onChange={(value) => void set("mode", value)}
+              onChange={(value) => {
+                void (async () => {
+                  if (isConnected) {
+                    await disconnect();
+                    await set("mode", value);
+                    await connect();
+                  } else {
+                    await set("mode", value);
+                  }
+                })();
+              }}
             />
           </div>
           <p className="hint">{helperAvailable ? t("settings.tunReadyHint") : t("settings.tunMissingHint")}</p>

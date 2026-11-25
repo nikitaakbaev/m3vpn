@@ -246,20 +246,20 @@ mod tests {
     #[test]
     fn parses_github_release_assets_and_digests() {
         let release = serde_json::json!({
-            "tag_name": "v0.2.0",
+            "tag_name": "v0.3.0",
             "published_at": "2026-12-01T12:00:00Z",
             "body": "TUN fixes",
-            "html_url": "https://github.com/owner/m3vpn/releases/tag/v0.2.0",
+            "html_url": "https://github.com/owner/m3vpn/releases/tag/v0.3.0",
             "assets": [
                 {
-                    "name": "m3vpn-0.2.0-1-x86_64.pkg.tar.zst",
-                    "browser_download_url": "https://github.com/owner/m3vpn/releases/download/v0.2.0/m3vpn-0.2.0-1-x86_64.pkg.tar.zst",
+                    "name": "m3vpn-0.3.0-1-x86_64.pkg.tar.zst",
+                    "browser_download_url": "https://github.com/owner/m3vpn/releases/download/v0.2.0/m3vpn-0.3.0-1-x86_64.pkg.tar.zst",
                     "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "size": 123
                 },
                 {
-                    "name": "m3vpn-0.2.0-linux-x86_64.tar.gz",
-                    "browser_download_url": "https://github.com/owner/m3vpn/releases/download/v0.2.0/m3vpn-0.2.0-linux-x86_64.tar.gz",
+                    "name": "m3vpn-0.3.0-linux-x86_64.tar.gz",
+                    "browser_download_url": "https://github.com/owner/m3vpn/releases/download/v0.2.0/m3vpn-0.3.0-linux-x86_64.tar.gz",
                     "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                     "size": 456
                 },
@@ -273,7 +273,7 @@ mod tests {
         });
         let info = parse_release(&release).expect("release");
         assert!(info.available);
-        assert_eq!(info.latest_version.as_deref(), Some("0.2.0"));
+        assert_eq!(info.latest_version.as_deref(), Some("0.3.0"));
         assert_eq!(info.artifacts.len(), 2);
         assert_eq!(info.artifacts[0].kind, "arch");
         assert_eq!(info.artifacts[1].kind, "portable");

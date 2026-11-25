@@ -46,7 +46,8 @@ pub fn config(socks_port: u16, http_port: u16, api_port: u16, slot_a: u16, slot_
         ],
         "route": {
             "rules": [{ "action": "sniff" }],
-            "final": "proxy"
+            "final": "proxy",
+            "default_mark": super::ROUTING_MARK
         },
         "experimental": {
             "clash_api": {
@@ -85,4 +86,15 @@ pub fn switch(api_port: u16, target: &str) -> Result<()> {
         bail!("front proxy switch returned {}", response.status());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn front_outbound_traffic_bypasses_tun() {
+        let config = config(10808, 10809, 11308, 11808, 11818);
+        assert_eq!(config["route"]["default_mark"], super::super::ROUTING_MARK);
+    }
 }

@@ -91,7 +91,7 @@ npm run tauri dev
 
 ```bash
 bash scripts/package-arch.sh
-sudo pacman -U dist/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
+sudo pacman -U dist/m3vpn-0.2.0-1-x86_64.pkg.tar.zst
 ```
 
 Пакет ставит приложение, sidecars, helper, `.desktop`, иконки и AppStream.
@@ -109,7 +109,7 @@ sudo systemctl disable --now m3vpn-helper
 sudo rm -rf /usr/lib/m3vpn
 sudo rm -f /etc/systemd/system/m3vpn-helper.service
 sudo systemctl daemon-reload
-sudo pacman -U dist/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
+sudo pacman -U dist/m3vpn-0.2.0-1-x86_64.pkg.tar.zst
 sudo systemctl enable --now m3vpn-helper
 ```
 
