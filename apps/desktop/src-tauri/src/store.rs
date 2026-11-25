@@ -1,7 +1,8 @@
+use anyhow::anyhow;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 pub type Db = Connection;
@@ -37,6 +38,7 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("telemetry.enabled", "false"),
     ("routing.active_profile_id", ""),
     ("routing.geo_update_hours", "24"),
+    ("servers.sort", "group"),
     ("update.github_repo", ""),
     ("update.autocheck", "true"),
 ];
@@ -125,6 +127,11 @@ fn migrate(conn: &Connection) -> Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_servers_profile ON servers(profile_id);
+
+        CREATE TABLE IF NOT EXISTS server_exclusions (
+            fingerprint TEXT PRIMARY KEY,
+            created_at  INTEGER NOT NULL
+        );
 
         CREATE TABLE IF NOT EXISTS ping_samples (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -309,6 +316,7 @@ pub struct ServerRow {
     pub host: Option<String>,
     pub port: Option<u16>,
     pub enabled: bool,
+    pub excluded: bool,
     pub latency_ms: Option<i64>,
 }
 
@@ -430,6 +438,7 @@ pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<S
             host: row.get(5)?,
             port: row.get::<_, Option<i64>>(6)?.map(|port| port as u16),
             enabled: row.get::<_, i64>(7)? != 0,
+            excluded: false,
             latency_ms: row.get(8)?,
         })
     })?;
@@ -437,7 +446,75 @@ pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<S
     for row in rows {
         result.push(row?);
     }
+    let exclusions = excluded_fingerprints(conn)?;
+    for row in &mut result {
+        row.excluded = exclusions.contains(&server_fingerprint(
+            &row.protocol,
+            row.host.as_deref(),
+            row.port,
+            &row.name,
+        ));
+    }
     Ok(result)
+}
+
+pub fn set_server_excluded(conn: &Connection, server_id: &str, excluded: bool) -> Result<()> {
+    let (protocol, host, port, name): (String, Option<String>, Option<i64>, String) = conn
+        .query_row(
+            "SELECT protocol, host, port, name FROM servers WHERE id = ?1",
+            [server_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?
+        .ok_or_else(|| anyhow!("сервер не найден"))?;
+    let fingerprint = server_fingerprint(
+        &protocol,
+        host.as_deref(),
+        port.map(|port| port as u16),
+        &name,
+    );
+    if excluded {
+        conn.execute(
+            "INSERT INTO server_exclusions(fingerprint, created_at) VALUES (?1, ?2)
+             ON CONFLICT(fingerprint) DO NOTHING",
+            params![fingerprint, now_secs()],
+        )?;
+        conn.execute(
+            "UPDATE servers SET latency_ms = NULL, latency_ok = 0, latency_at = NULL WHERE id = ?1",
+            [server_id],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM server_exclusions WHERE fingerprint = ?1",
+            [&fingerprint],
+        )?;
+    }
+    Ok(())
+}
+
+fn excluded_fingerprints(conn: &Connection) -> Result<HashSet<String>> {
+    let mut stmt = conn.prepare("SELECT fingerprint FROM server_exclusions")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut result = HashSet::new();
+    for row in rows {
+        result.insert(row?);
+    }
+    Ok(result)
+}
+
+fn server_fingerprint(protocol: &str, host: Option<&str>, port: Option<u16>, name: &str) -> String {
+    format!(
+        "{protocol}|{}|{}|{name}",
+        host.unwrap_or_default(),
+        port.unwrap_or_default()
+    )
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone)]
@@ -514,6 +591,54 @@ mod tests {
         set(&conn, "mode", "tun").unwrap();
         assert_eq!(get(&conn, "mode").unwrap().as_deref(), Some("tun"));
         assert!(all(&conn).unwrap().contains_key("proxy.active_port"));
+
+        drop(conn);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), suffix));
+        }
+    }
+
+    #[test]
+    fn exclusions_survive_reimport_and_are_listed() {
+        let path = std::env::temp_dir().join(format!("m3vpn-exclude-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let conn = open(&path).expect("open test database");
+        let profile = NewProfile {
+            id: "p1".into(),
+            name: "Test".into(),
+            url: String::new(),
+            url_hidden: true,
+            title: None,
+            description: None,
+            support_url: None,
+            web_page_url: None,
+            update_interval_hours: 24,
+            userinfo: None,
+            created_at: 1,
+            updated_at: 1,
+        };
+        let server = NewServer {
+            id: "p1:0".into(),
+            profile_id: "p1".into(),
+            name: "Excluded".into(),
+            protocol: "vless".into(),
+            host: Some("example.com".into()),
+            port: Some(443),
+            params_json: None,
+            full_config_json: "{}".into(),
+            sort_index: 0,
+        };
+        save_import(&conn, &profile, std::slice::from_ref(&server)).expect("save");
+        assert!(!list_servers(&conn, None).unwrap()[0].excluded);
+
+        set_server_excluded(&conn, "p1:0", true).expect("exclude");
+        assert!(list_servers(&conn, None).unwrap()[0].excluded);
+
+        save_import(&conn, &profile, &[server]).expect("reimport");
+        assert!(list_servers(&conn, None).unwrap()[0].excluded);
+
+        set_server_excluded(&conn, "p1:0", false).expect("include");
+        assert!(!list_servers(&conn, None).unwrap()[0].excluded);
 
         drop(conn);
         for suffix in ["", "-wal", "-shm"] {

@@ -3,7 +3,6 @@ import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
-import { Segmented } from "../../components/Segmented";
 import { Icon } from "../../components/Icon";
 import { useAppStore, useT } from "../../store/useAppStore";
 import type { Server } from "../../lib/tauri";
@@ -36,11 +35,14 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
   const disconnect = useAppStore((state) => state.disconnect);
   const refreshData = useAppStore((state) => state.refreshData);
   const probeAll = useAppStore((state) => state.probeAll);
+  const setServerExcluded = useAppStore((state) => state.setServerExcluded);
   const probing = useAppStore((state) => state.probing);
   const busy = useAppStore((state) => state.busy);
   const settings = useAppStore((state) => state.settings);
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortMode>("group");
+  const configuredSort = settings["servers.sort"];
+  const sortMode: SortMode =
+    configuredSort === "ping" || configuredSort === "name" ? configuredSort : "group";
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -54,17 +56,23 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
 
   const ordered = useMemo(() => {
     const list = [...filtered];
-    if (sort === "ping") {
-      list.sort(
-        (left, right) =>
+    list.sort((left, right) => {
+      if (left.excluded !== right.excluded) {
+        return left.excluded ? 1 : -1;
+      }
+      if (sortMode === "ping") {
+        return (
           (left.latencyMs ?? Number.MAX_SAFE_INTEGER) -
-          (right.latencyMs ?? Number.MAX_SAFE_INTEGER),
-      );
-    } else if (sort === "name") {
-      list.sort((left, right) => left.name.localeCompare(right.name, "ru"));
-    }
+          (right.latencyMs ?? Number.MAX_SAFE_INTEGER)
+        );
+      }
+      if (sortMode === "name") {
+        return left.name.localeCompare(right.name, "ru");
+      }
+      return 0;
+    });
     return list;
-  }, [filtered, sort]);
+  }, [filtered, sortMode]);
 
   const groups = useMemo(() => {
     const map = new Map<string, Server[]>();
@@ -76,6 +84,14 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
     return [...map.entries()];
   }, [ordered]);
 
+  const eligibleCount = servers.filter((server) => !server.excluded).length;
+  const excludedCount = servers.length - eligibleCount;
+  const sortLabelKey =
+    sortMode === "ping"
+      ? "servers.sortPing"
+      : sortMode === "name"
+        ? "servers.sortName"
+        : "servers.sortGroup";
   const pingMode = settings["ping.protocol"] ?? "fast_http";
   const pingDisplay = settings["ping.display"] ?? "both";
   const pingLabelKey =
@@ -140,7 +156,23 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             </span>
           </span>
         </button>
-        {renderLatency(server)}
+        {server.excluded ? (
+          <span className="pill pill--muted">{t("servers.excluded")}</span>
+        ) : (
+          renderLatency(server)
+        )}
+        <button
+          type="button"
+          className="icon-button"
+          title={server.excluded ? t("servers.include") : t("servers.exclude")}
+          aria-label={server.excluded ? t("servers.include") : t("servers.exclude")}
+          onClick={(event) => {
+            event.stopPropagation();
+            void setServerExcluded(server.id, !server.excluded);
+          }}
+        >
+          <Icon name={server.excluded ? "visibility" : "visibility_off"} size={18} />
+        </button>
         <Button
           variant={connected ? "tonal" : "outlined"}
           icon={connected ? "stop_circle" : "play_arrow"}
@@ -206,6 +238,9 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             <span className="chip">
               {profiles.length} {t("home.profilesShort")}
             </span>
+            {excludedCount > 0 ? (
+              <span className="chip">{t("servers.excludedCount")}: {excludedCount}</span>
+            ) : null}
             {connectedServerId !== null ? (
               <span className="chip chip--success">
                 {t("servers.connectedCount")}: 1
@@ -215,29 +250,22 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         </div>
 
         <div className="toolbar-row toolbar-row--between">
-          <Segmented
-            value={sort}
-            label={t("servers.sortPing")}
-            options={[
-              { value: "group", label: t("servers.sortGroup"), icon: "workspaces" },
-              { value: "ping", label: t("servers.sortPing"), icon: "speed" },
-              { value: "name", label: t("servers.sortName"), icon: "sort_by_alpha" },
-            ]}
-            onChange={(value) => setSort(value as SortMode)}
-          />
+          <Button variant="text" icon="tune" onClick={() => onNavigate("settings")}>
+            {t("servers.sortedBy")}: {t(sortLabelKey)}
+          </Button>
           <div className="toolbar-actions">
             <span className="muted toolbar-note">{t(pingLabelKey)}</span>
             <Button
               variant="tonal"
               icon={probing ? "progress_activity" : "speed"}
-              disabled={probing || servers.length === 0}
+              disabled={probing || eligibleCount === 0}
               onClick={() => void probeAll()}
             >
               {probing ? t("servers.probing") : t("servers.probe")}
             </Button>
             <Button
               icon="bolt"
-              disabled={probing || busy || servers.length === 0}
+              disabled={probing || busy || eligibleCount === 0}
               onClick={() => void probeAll(true)}
             >
               {t("servers.fastest")}
@@ -272,7 +300,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             }
           />
         </Card>
-      ) : sort === "group" ? (
+      ) : sortMode === "group" ? (
         <div className="server-groups">
           {groups.map(([profileName, group]) => (
             <Card key={profileName} className="server-group">
@@ -293,7 +321,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
           <div className="server-group__head">
             <div>
               <h3>
-                {sort === "ping" ? t("servers.sortPing") : t("servers.sortName")}
+                {sortMode === "ping" ? t("servers.sortPing") : t("servers.sortName")}
               </h3>
               <span className="muted">{ordered.length}</span>
             </div>

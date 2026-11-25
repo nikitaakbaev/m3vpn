@@ -158,6 +158,7 @@ pub fn run() {
             commands::delete_profile,
             commands::refresh_profile,
             commands::probe_servers,
+            commands::set_server_excluded,
             commands::connect_server,
             commands::disconnect_core,
             commands::connection_status,

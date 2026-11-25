@@ -86,7 +86,7 @@ pub fn probe_all(
         let db = db.lock().map_err(|_| anyhow!("database lock poisoned"))?;
         store::list_servers(&db, None)?
             .into_iter()
-            .filter(|server| server.enabled)
+            .filter(|server| server.enabled && !server.excluded)
             .collect::<Vec<_>>()
     };
 
@@ -412,7 +412,8 @@ mod tests {
     use std::net::TcpListener;
 
     fn tcp_server(port: u16) -> (Mutex<Connection>, std::path::PathBuf) {
-        let path = std::env::temp_dir().join(format!("m3vpn-ping-test-{}.db", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("m3vpn-ping-test-{}-{port}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let conn = store::open(&path).expect("open test database");
         let profile = NewProfile {
@@ -459,6 +460,24 @@ mod tests {
 
         let servers = store::list_servers(&db.lock().unwrap(), None).expect("list");
         assert!(servers[0].latency_ms.is_some());
+
+        drop(db);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), suffix));
+        }
+    }
+
+    #[test]
+    fn skips_servers_marked_as_excluded() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let port = listener.local_addr().expect("listener address").port();
+        std::thread::spawn(move || for _ in listener.incoming() {});
+
+        let (db, path) = tcp_server(port);
+        store::set_server_excluded(&db.lock().unwrap(), "p1:0", true).expect("exclude");
+        let options = PingOptions::new(PingMode::Tcp, "", 1000, 2);
+        let results = probe_all(&db, &options, None, None).expect("probe");
+        assert!(results.is_empty());
 
         drop(db);
         for suffix in ["", "-wal", "-shm"] {

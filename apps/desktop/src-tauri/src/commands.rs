@@ -585,6 +585,19 @@ pub fn open_external(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn set_server_excluded(
+    state: State<'_, AppState>,
+    server_id: String,
+    excluded: bool,
+) -> Result<(), String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())?;
+    crate::store::set_server_excluded(&db, &server_id, excluded).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn connection_status(state: State<'_, AppState>) -> ConnectionStatus {
     let mut status = core::status(&state.core, &state.paths);
     let mut tun = state.tun_active.load(std::sync::atomic::Ordering::Relaxed);

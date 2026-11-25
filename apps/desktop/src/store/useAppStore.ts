@@ -44,6 +44,7 @@ interface AppStore {
   pollStatus: () => Promise<void>;
   set: (key: string, value: string) => Promise<void>;
   selectServer: (serverId: string) => void;
+  setServerExcluded: (serverId: string, excluded: boolean) => Promise<void>;
   connect: (serverId?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   importSubscription: (url: string, name?: string) => Promise<api.ImportSummary>;
@@ -140,10 +141,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         api.connectionStatus(),
       ]);
       const selected = get().selectedServerId;
+      const automatic = servers.find((server) => !server.excluded);
       const nextSelected =
         selected && servers.some((server) => server.id === selected)
           ? selected
-          : servers[0]?.id ?? null;
+          : automatic?.id ?? servers[0]?.id ?? null;
       set({ profiles, servers, status, selectedServerId: nextSelected });
     } catch (error) {
       set({ lastError: String(error) });
@@ -192,6 +194,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
       autoCandidateId: null,
       autoCandidateWins: 0,
     }),
+
+  setServerExcluded: async (serverId, excluded) => {
+    try {
+      await api.setServerExcluded(serverId, excluded);
+      await get().refreshData();
+    } catch (error) {
+      set({ lastError: String(error) });
+    }
+  },
 
   connect: async (serverId) => {
     const state = get();
@@ -315,6 +326,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   probeAll: async (connectFastest = false, silent = false) => {
     if (get().probing || get().busy) return;
+    const servers = get().servers;
+    if (!servers.some((server) => !server.excluded)) {
+      if (!silent) get().notify(translate(get().settings["ui.language"] as Lang, "servers.allExcluded"));
+      return;
+    }
     set({ probing: true });
     try {
       const settings = get().settings;

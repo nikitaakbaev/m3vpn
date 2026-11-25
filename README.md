@@ -27,7 +27,8 @@ VPN/proxy-клиент для Linux: Material 3 UI, автоматический
   переключение ядер. См. [`docs/m8-report.md`](docs/m8-report.md).
 - **M9 — готово.** Fast HTTP (реальный HTTP GET через прокси), настройки
   отображения пинга, новая палитра, Arch-пакет, portable tar.gz, `.desktop`,
-  иконки, AppStream и проверка обновлений через GitHub Releases. См.
+  иконки, AppStream, проверка обновлений через GitHub Releases, сортировка
+  списка в настройках и исключения серверов из пинга/автовыбора. См.
   [`docs/m9-report.md`](docs/m9-report.md).
 
 ## Обновления

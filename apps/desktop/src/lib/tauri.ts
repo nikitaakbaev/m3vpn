@@ -36,6 +36,7 @@ export interface Server {
   host: string | null;
   port: number | null;
   enabled: boolean;
+  excluded: boolean;
   latencyMs: number | null;
 }
 
@@ -173,6 +174,11 @@ export const DEFAULT_SETTINGS: Settings = {
   "startup.minimized": "false",
   "startup.close_to_tray": "true",
   "telemetry.enabled": "false",
+  "routing.active_profile_id": "",
+  "routing.geo_update_hours": "24",
+  "servers.sort": "group",
+  "update.github_repo": "",
+  "update.autocheck": "true",
 };
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -220,6 +226,7 @@ let mockServers: Server[] = [
   host: host as string,
   port: port as number,
   enabled: true,
+  excluded: false,
   latencyMs: [38, 52, 63, 71, 88, 120][index] ?? null,
 }));
 
@@ -233,6 +240,7 @@ mockServers.push({
   host: "149.33.14.60",
   port: 8443,
   enabled: true,
+  excluded: false,
   latencyMs: 118,
 });
 
@@ -351,6 +359,7 @@ export async function importConfig(text: string, name?: string): Promise<ImportS
         host: "example.com",
         port: isAwg ? 51820 : 443,
         enabled: true,
+        excluded: false,
         latencyMs: null,
       },
       ...mockServers,
@@ -509,11 +518,13 @@ export async function probeServers(
   testUrl = "https://www.gstatic.com/generate_204",
 ): Promise<LatencyResult[]> {
   if (!isTauri) {
-    const results: LatencyResult[] = mockServers.map((server, index) => {
-      const latency = 32 + index * 12 + Math.round(Math.random() * 9);
-      server.latencyMs = latency;
-      return { serverId: server.id, latencyMs: latency, ok: true, error: null };
-    });
+    const results: LatencyResult[] = mockServers
+      .filter((server) => !server.excluded)
+      .map((server, index) => {
+        const latency = 32 + index * 12 + Math.round(Math.random() * 9);
+        server.latencyMs = latency;
+        return { serverId: server.id, latencyMs: latency, ok: true, error: null };
+      });
     return results;
   }
   return invoke<LatencyResult[]>("probe_servers", { timeoutMs, concurrency, mode, testUrl });
@@ -546,6 +557,16 @@ export async function connectServer(serverId: string): Promise<ConnectionStatus>
     return mockStatus;
   }
   return invoke<ConnectionStatus>("connect_server", { serverId });
+}
+
+export async function setServerExcluded(serverId: string, excluded: boolean): Promise<void> {
+  if (!isTauri) {
+    mockServers = mockServers.map((server) =>
+      server.id === serverId ? { ...server, excluded, latencyMs: excluded ? null : server.latencyMs } : server,
+    );
+    return;
+  }
+  await invoke("set_server_excluded", { serverId, excluded });
 }
 
 export async function disconnectCore(): Promise<ConnectionStatus> {

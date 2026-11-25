@@ -49,6 +49,7 @@ export function SettingsPage() {
   const updateRepo = settings["update.github_repo"] ?? "";
   const updateAutocheck = settings["update.autocheck"] !== "false";
   const currentVersion = info?.version ?? "0.1.0";
+  const serverSort = settings["servers.sort"] ?? "group";
   const pingProtocol = settings["ping.protocol"] ?? "fast_http";
   const pingDisplay = settings["ping.display"] ?? "both";
   const pingUrl = settings["ping.url"] ?? "https://www.gstatic.com/generate_204";
@@ -377,6 +378,24 @@ export function SettingsPage() {
               ]}
               onChange={(value) => void set("select.mode", value)}
             />
+          </div>
+          <div className="settings-row settings-row--column">
+            <div className="settings-row__text">
+              <strong>{t("settings.serverSort")}</strong>
+              <span>{t("settings.serverSortHint")}</span>
+            </div>
+            <div className="settings-segmented">
+              <Segmented
+                value={serverSort}
+                label={t("settings.serverSort")}
+                options={[
+                  { value: "group", label: t("servers.sortGroup"), icon: "workspaces" },
+                  { value: "ping", label: t("servers.sortPing"), icon: "speed" },
+                  { value: "name", label: t("servers.sortName"), icon: "sort_by_alpha" },
+                ]}
+                onChange={(value) => void set("servers.sort", value)}
+              />
+            </div>
           </div>
           <div className="settings-row">
             <div className="settings-row__text">

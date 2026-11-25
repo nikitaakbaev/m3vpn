@@ -35,7 +35,9 @@ export default function App() {
   const loaded = useAppStore((state) => state.loaded);
   const settings = useAppStore((state) => state.settings);
   const isConnected = useAppStore((state) => state.status.running);
-  const serverCount = useAppStore((state) => state.servers.length);
+  const servers = useAppStore((state) => state.servers);
+  const selectedServerId = useAppStore((state) => state.selectedServerId);
+  const serverCount = servers.length;
   const connect = useAppStore((state) => state.connect);
   const probeAll = useAppStore((state) => state.probeAll);
   const measureRtt = useAppStore((state) => state.measureRtt);
@@ -103,9 +105,13 @@ export default function App() {
     if (!loaded || autoTried.current) return;
     if (!autoconnect) return;
     if (isConnected || serverCount === 0) return;
+    const target =
+      servers.find((server) => server.id === selectedServerId && !server.excluded) ??
+      servers.find((server) => !server.excluded);
+    if (!target) return;
     autoTried.current = true;
-    void connect();
-  }, [loaded, autoconnect, isConnected, serverCount, connect]);
+    void connect(target.id);
+  }, [loaded, autoconnect, isConnected, serverCount, servers, selectedServerId, connect]);
 
   useEffect(() => {
     applyTheme(seed, theme);
