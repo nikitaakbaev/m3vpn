@@ -77,6 +77,10 @@ if ! ip rule show | grep -q "fwmark 0x2022 lookup main"; then
   echo "front bypass rule is missing" >&2
   exit 1
 fi
+if ! nft list table inet m3vpn_tun 2>/dev/null | grep -q 'iifname "m3vpn0" accept'; then
+  echo "TUN input accept rule is missing" >&2
+  exit 1
+fi
 
 if ! timeout 10s "$HELPER" stop; then
   echo "helper stop failed" >&2
@@ -87,6 +91,10 @@ fi
 
 if ip link show m3vpn0 >/dev/null 2>&1; then
   echo "TUN interface still exists after stop" >&2
+  exit 1
+fi
+if nft list table inet m3vpn_tun >/dev/null 2>&1; then
+  echo "TUN input table remains after stop" >&2
   exit 1
 fi
 

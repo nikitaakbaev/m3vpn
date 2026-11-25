@@ -15,6 +15,7 @@ const DEFAULT_RUN_DIR: &str = "/run/m3vpn";
 const DEFAULT_SINGBOX: &str = "/usr/lib/m3vpn/sidecars/bin/hiddify-sing-box";
 const FRONT_MARK: &str = "0x2022";
 const MARK_TABLE: &str = "m3vpn_mark";
+const TUN_TABLE: &str = "m3vpn_tun";
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -236,6 +237,12 @@ fn start_tun(
         restore_network(run_dir);
         return Err(error);
     }
+    if let Err(error) = apply_tun_input_accept() {
+        drop(bypass);
+        remove_proxy_mark();
+        restore_network(run_dir);
+        return Err(error);
+    }
     let config_path = run_dir.join("tun.json");
     fs::write(
         &config_path,
@@ -445,6 +452,7 @@ fn remove_front_bypass() {
 fn cleanup_tun_interface() {
     let _ = Command::new("ip").args(["link", "delete", IFACE]).output();
     remove_proxy_mark();
+    remove_tun_input_accept();
     remove_front_bypass();
     for priority in 9000..=9010 {
         loop {
@@ -566,6 +574,47 @@ fn cgroup_path(pid: u32) -> Result<String> {
 fn remove_proxy_mark() {
     let _ = Command::new("nft")
         .args(["delete", "table", "inet", MARK_TABLE])
+        .output();
+}
+
+/// UFW and similar firewalls drop traffic arriving on a new interface. Accept
+/// only the TUN interface in a higher-priority table, so the host firewall
+/// keeps protecting every other interface.
+fn apply_tun_input_accept() -> Result<()> {
+    remove_tun_input_accept();
+    let commands: &[&[&str]] = &[
+        &["add", "table", "inet", TUN_TABLE],
+        &[
+            "add",
+            "chain",
+            "inet",
+            TUN_TABLE,
+            "input",
+            "{ type filter hook input priority -10; policy accept; }",
+        ],
+        &[
+            "add", "rule", "inet", TUN_TABLE, "input", "iifname", IFACE, "accept",
+        ],
+    ];
+    for args in commands {
+        let output = Command::new("nft")
+            .args(*args)
+            .output()
+            .context("run nft")?;
+        if !output.status.success() {
+            remove_tun_input_accept();
+            bail!(
+                "nft TUN input rule failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+    Ok(())
+}
+
+fn remove_tun_input_accept() {
+    let _ = Command::new("nft")
+        .args(["delete", "table", "inet", TUN_TABLE])
         .output();
 }
 
