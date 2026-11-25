@@ -204,14 +204,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await get().refreshData();
       const state = get();
       // Excluding the active server must not leave auto mode stuck on it.
-      // Connected: switch to the fastest eligible server. Idle: select it.
+      // Use the last known latency for an immediate switch, then let the
+      // normal probe refine the choice; if nothing is known, probe now.
       if (
         excluded &&
         (wasConnected || wasSelected) &&
         state.settings["select.mode"] !== "manual" &&
         state.settings["ping.enabled"] !== "false"
       ) {
-        await get().probeAll(wasConnected, true);
+        const bestKnown = state.servers
+          .filter((server) => !server.excluded && server.latencyMs !== null)
+          .sort(
+            (left, right) =>
+              (left.latencyMs ?? Number.MAX_SAFE_INTEGER) -
+              (right.latencyMs ?? Number.MAX_SAFE_INTEGER),
+          )[0];
+        if (wasConnected && bestKnown) {
+          await get().connect(bestKnown.id);
+        } else if (wasSelected && bestKnown) {
+          get().selectServer(bestKnown.id);
+        } else {
+          await get().probeAll(wasConnected, true);
+        }
       }
     } catch (error) {
       set({ lastError: String(error) });
