@@ -5,6 +5,9 @@ VPN/proxy-клиент для Linux: Material 3 UI, автоматический
 
 Репозиторий: <https://github.com/nikitaakbaev/m3vpn>
 
+[![CI](https://github.com/nikitaakbaev/m3vpn/actions/workflows/ci.yml/badge.svg)](https://github.com/nikitaakbaev/m3vpn/actions/workflows/ci.yml)
+[![Release](https://github.com/nikitaakbaev/m3vpn/actions/workflows/release.yml/badge.svg)](https://github.com/nikitaakbaev/m3vpn/actions/workflows/release.yml)
+
 ## Статус
 
 - **M0 — готово.** Ядра собраны, AWG/selector/TUN проверены. См. [`docs/m0-report.md`](docs/m0-report.md).
