@@ -127,8 +127,8 @@ bash scripts/publish-github.sh
 Добавлен `scripts/package-arch.sh`. Он собирает release-приложение и helper,
 раскладывает sidecars и создаёт:
 
-- `dist/m3vpn-0.1.0-1-x86_64.pkg.tar.zst` — Arch-пакет;
-- `dist/m3vpn-0.1.0-linux-x86_64.tar.gz` — portable-архив.
+- `dist/m3vpn-0.1.1-1-x86_64.pkg.tar.zst` — Arch-пакет;
+- `dist/m3vpn-0.1.1-linux-x86_64.tar.gz` — portable-архив.
 
 Состав пакета:
 
@@ -145,7 +145,7 @@ bash scripts/publish-github.sh
 Установка:
 
 ```bash
-sudo pacman -U dist/m3vpn-0.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U dist/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
 sudo usermod -aG m3vpn "$USER"   # затем перелогиниться
 ```
 

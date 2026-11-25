@@ -3,6 +3,8 @@
 VPN/proxy-клиент для Linux: Material 3 UI, автоматический пинг серверов,
 выбор быстрейшего и безопасное отключение без потери интернета.
 
+Репозиторий: <https://github.com/nikitaakbaev/m3vpn>
+
 ## Статус
 
 - **M0 — готово.** Ядра собраны, AWG/selector/TUN проверены. См. [`docs/m0-report.md`](docs/m0-report.md).
@@ -39,7 +41,7 @@ VPN/proxy-клиент для Linux: Material 3 UI, автоматический
 
 Приложение смотрит последний публичный GitHub Release:
 
-**Настройки → Обновления → GitHub-репозиторий: `owner/m3vpn`**
+**Настройки → Обновления → GitHub-репозиторий: `nikitaakbaev/m3vpn`**
 
 Оно показывает версию, заметки и ссылки на Arch-пакет/portable-архив, но не
 устанавливает их автоматически. Проверка идёт при запуске и раз в 6 часов.
@@ -84,7 +86,7 @@ npm run tauri dev
 
 ```bash
 bash scripts/package-arch.sh
-sudo pacman -U dist/m3vpn-0.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U dist/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
 ```
 
 Пакет ставит приложение, sidecars, helper, `.desktop`, иконки и AppStream.

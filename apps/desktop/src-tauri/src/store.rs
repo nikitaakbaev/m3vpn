@@ -39,7 +39,7 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("routing.active_profile_id", ""),
     ("routing.geo_update_hours", "24"),
     ("servers.sort", "group"),
-    ("update.github_repo", ""),
+    ("update.github_repo", "nikitaakbaev/m3vpn"),
     ("update.autocheck", "true"),
 ];
 

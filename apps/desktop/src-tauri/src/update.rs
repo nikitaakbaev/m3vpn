@@ -227,6 +227,23 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires network access to GitHub Releases"]
+    fn checks_the_live_project_release() {
+        let info = check("nikitaakbaev/m3vpn").expect("release");
+        assert_eq!(info.latest_version.as_deref(), Some(current_version()));
+        assert_eq!(info.artifacts.len(), 2);
+        assert!(info
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.kind == "arch"));
+        assert!(info
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.kind == "portable"));
+        assert!(info.release_url.is_some());
+    }
+
+    #[test]
     fn parses_github_release_assets_and_digests() {
         let release = serde_json::json!({
             "tag_name": "v0.2.0",
