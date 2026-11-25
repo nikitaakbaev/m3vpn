@@ -18,7 +18,7 @@ rate limit (60 requests per hour per IP); m3vpn checks at startup and every
 ## Prepare a release
 
 ```bash
-export GITHUB_REPO="owner/m3vpn"
+export GITHUB_REPO="nikitaakbaev/m3vpn"
 export GITHUB_TOKEN="github_pat_..."
 export M3VPN_RELEASE_NOTES="TUN fixes, Fast HTTP ping, update checker"
 bash scripts/publish-github.sh
@@ -43,7 +43,7 @@ the artifact tooltip and requires a valid digest for every asset.
 Set:
 
 ```text
-Настройки → Обновления → GitHub-репозиторий: owner/m3vpn
+Настройки → Обновления → GitHub-репозиторий: nikitaakbaev/m3vpn
 ```
 
 The latest release must be public and non-draft. The app strips a leading `v`
@@ -52,7 +52,7 @@ from the tag and compares numeric versions.
 ## Install on Arch
 
 ```bash
-curl -LO https://github.com/owner/m3vpn/releases/latest/download/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/nikitaakbaev/m3vpn/releases/latest/download/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
 sudo pacman -U m3vpn-0.1.1-1-x86_64.pkg.tar.zst
 ```
 
