@@ -5,6 +5,14 @@ use std::time::Duration;
 
 pub const SECRET: &str = "m3vpn";
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrafficStats {
+    pub upload_total: u64,
+    pub download_total: u64,
+    pub connections: usize,
+}
+
 pub fn config(socks_port: u16, http_port: u16, api_port: u16, slot_a: u16, slot_b: u16) -> Value {
     json!({
         "log": { "level": "warn", "timestamp": true },
@@ -68,6 +76,27 @@ pub fn write_config(config: &Value, path: &Path) -> Result<()> {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     }
     Ok(())
+}
+
+pub fn traffic(api_port: u16) -> Result<TrafficStats> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(800))
+        .build()
+        .context("build traffic client")?;
+    let response = client
+        .get(format!("http://127.0.0.1:{api_port}/connections"))
+        .bearer_auth(SECRET)
+        .send()
+        .context("fetch front traffic")?;
+    if !response.status().is_success() {
+        bail!("front traffic returned {}", response.status());
+    }
+    let value: Value = response.json().context("decode front traffic")?;
+    Ok(TrafficStats {
+        upload_total: value["uploadTotal"].as_u64().unwrap_or(0),
+        download_total: value["downloadTotal"].as_u64().unwrap_or(0),
+        connections: value["connections"].as_array().map(Vec::len).unwrap_or(0),
+    })
 }
 
 pub fn switch(api_port: u16, target: &str) -> Result<()> {

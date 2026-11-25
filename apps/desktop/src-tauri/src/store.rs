@@ -22,6 +22,8 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("select.tolerance_ms", "50"),
     ("select.tolerance_ratio", "0.15"),
     ("select.wins_required", "1"),
+    ("select.traffic_guard", "true"),
+    ("select.traffic_guard_kbps", "256"),
     ("select.failures_to_failover", "2"),
     ("tun.kill_switch", "false"),
     ("tun.strict_route", "false"),

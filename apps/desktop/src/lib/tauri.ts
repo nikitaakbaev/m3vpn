@@ -51,6 +51,12 @@ export interface Server {
   lossPercent: number;
 }
 
+export interface TrafficStats {
+  uploadTotal: number;
+  downloadTotal: number;
+  connections: number;
+}
+
 export interface ConnectionStatus {
   running: boolean;
   serverId: string | null;
@@ -186,6 +192,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "select.tolerance_ms": "50",
   "select.tolerance_ratio": "0.15",
   "select.wins_required": "1",
+  "select.traffic_guard": "true",
+  "select.traffic_guard_kbps": "256",
   "select.failures_to_failover": "2",
   "tun.kill_switch": "false",
   "tun.strict_route": "false",
@@ -583,6 +591,11 @@ export async function refreshRoutingGeoIfDue(): Promise<GeoStatus | null> {
 export async function listProfiles(): Promise<Profile[]> {
   if (!isTauri) return [...mockProfiles];
   return invoke<Profile[]>("list_profiles");
+}
+
+export async function trafficStats(): Promise<TrafficStats> {
+  if (!isTauri) return { uploadTotal: 0, downloadTotal: 0, connections: 0 };
+  return invoke<TrafficStats>("traffic_stats");
 }
 
 export async function setServerFavorite(serverId: string, favorite: boolean): Promise<void> {

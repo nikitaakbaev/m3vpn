@@ -56,6 +56,8 @@ export function SettingsPage() {
     Number(settings["select.tolerance_ratio"] ?? "0.3") * 100,
   );
   const autoWins = Number(settings["select.wins_required"] ?? "2");
+  const trafficGuard = settings["select.traffic_guard"] !== "false";
+  const trafficKbps = Number(settings["select.traffic_guard_kbps"] ?? "256") || 256;
   const updateRepo = settings["update.github_repo"] ?? "";
   const updateAutocheck = settings["update.autocheck"] !== "false";
   const currentVersion = info?.version ?? "0.1.0";
@@ -478,6 +480,38 @@ export function SettingsPage() {
                 const wins = Number(event.target.value);
                 if (!Number.isFinite(wins)) return;
                 void set("select.wins_required", String(Math.max(1, Math.min(5, Math.round(wins)))));
+              }}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.trafficGuard")}</strong>
+              <span>{t("settings.trafficGuardHint")}</span>
+            </div>
+            <Switch
+              checked={trafficGuard}
+              label={t("settings.trafficGuard")}
+              onChange={(checked) => void set("select.traffic_guard", checked ? "true" : "false")}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{t("settings.trafficGuardRate")}</strong>
+              <span>{t("settings.trafficGuardRateHint")}</span>
+            </div>
+            <input
+              className="m3-input m3-input--short"
+              type="number"
+              aria-label={t("settings.trafficGuardRate")}
+              min={16}
+              max={10240}
+              disabled={!trafficGuard}
+              value={String(trafficKbps)}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (!Number.isFinite(value)) return;
+                const clamped = Math.max(16, Math.min(10240, Math.round(value)));
+                void set("select.traffic_guard_kbps", String(clamped));
               }}
             />
           </div>

@@ -101,6 +101,11 @@ pub fn start_front(lock: &Mutex<CoreState>, paths: &AppPaths, sidecars: &Sidecar
     ensure_front(lock, paths, sidecars).map(|_| ())
 }
 
+pub fn front_api_port(lock: &Mutex<CoreState>) -> Option<u16> {
+    let guard = lock.lock().ok()?;
+    (guard.front_api_port != 0).then_some(guard.front_api_port)
+}
+
 pub fn front_pid(lock: &Mutex<CoreState>) -> Option<u32> {
     let guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     guard.front.as_ref().map(Child::id)

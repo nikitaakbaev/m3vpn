@@ -37,6 +37,8 @@ interface AppStore {
   refreshingId: string | null;
   autoCandidateId: string | null;
   autoCandidateWins: number;
+  lastTraffic: { total: number; at: number } | null;
+  trafficGuardNotified: boolean;
   toast: string | null;
   lastError: string | null;
   reportedStatusError: string | null;
@@ -111,6 +113,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   refreshingId: null,
   autoCandidateId: null,
   autoCandidateWins: 0,
+  lastTraffic: null,
+  trafficGuardNotified: false,
   toast: null,
   lastError: null,
   reportedStatusError: null,
@@ -305,6 +309,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedServerId: target,
         reportedStatusError: null,
         rtt: null,
+        lastTraffic: null,
+        trafficGuardNotified: false,
         autoCandidateId: null,
         autoCandidateWins: 0,
       });
@@ -321,6 +327,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   disconnect: async () => {
+    set({ lastTraffic: null, trafficGuardNotified: false });
     set({ busy: true });
     try {
       const status = await api.disconnectCore();
@@ -329,6 +336,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         busy: false,
         reportedStatusError: null,
         rtt: null,
+        lastTraffic: null,
+        trafficGuardNotified: false,
         autoCandidateId: null,
         autoCandidateWins: 0,
       });
@@ -434,6 +443,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const state = get();
       const lang = state.settings["ui.language"] as Lang;
       const autoMode = state.settings["select.mode"] !== "manual";
+      let trafficBusy = false;
+      if (!connectFastest && autoMode && state.settings["select.traffic_guard"] !== "false") {
+        try {
+          const stats = await api.trafficStats();
+          const total = stats.uploadTotal + stats.downloadTotal;
+          const previous = get().lastTraffic;
+          if (previous && stats.connections > 0) {
+            const elapsed = Math.max(1, (Date.now() - previous.at) / 1000);
+            const kbps = Number(state.settings["select.traffic_guard_kbps"] ?? "256") || 256;
+            const threshold = Math.max(16, kbps) * 1024;
+            trafficBusy = Math.max(0, total - previous.total) / elapsed >= threshold;
+          }
+          set({ lastTraffic: { total, at: Date.now() } });
+          if (!trafficBusy && get().trafficGuardNotified) {
+            set({ trafficGuardNotified: false });
+          }
+        } catch {
+          // The front API is optional; a missing sample must not block switching.
+        }
+      }
       const winsRequired = Math.max(
         1,
         Number(state.settings["select.wins_required"] ?? "2") || 2,
@@ -469,20 +498,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
         if (!state.status.running) {
           get().selectServer(best.serverId);
         } else if (best.serverId !== current?.id && clearlyBetter) {
-          const wins = state.autoCandidateId === best.serverId ? state.autoCandidateWins + 1 : 1;
-          if (current?.excluded || wins >= winsRequired) {
+          if (trafficBusy) {
+            if (!get().trafficGuardNotified) {
+              set({ trafficGuardNotified: true });
+              get().notify(translate(lang, "servers.trafficGuard"));
+            }
             set({ autoCandidateId: null, autoCandidateWins: 0 });
-            await get().connect(best.serverId);
-            const bestServer = state.servers.find((server) => server.id === best.serverId);
-            const from = current
-              ? `${current.name} · ${current.latencyMs ?? "—"} ms`
-              : "—";
-            const to = `${bestServer?.name ?? best.serverId} · ${best.latencyMs ?? "—"} ms`;
-            get().notify(
-              `${translate(lang, "servers.autoSwitched")}: ${to} ← ${from}`,
-            );
           } else {
-            set({ autoCandidateId: best.serverId, autoCandidateWins: wins });
+            const wins = state.autoCandidateId === best.serverId ? state.autoCandidateWins + 1 : 1;
+            if (current?.excluded || wins >= winsRequired) {
+              set({ autoCandidateId: null, autoCandidateWins: 0 });
+              await get().connect(best.serverId);
+              const bestServer = state.servers.find((server) => server.id === best.serverId);
+              const from = current
+                ? `${current.name} · ${current.latencyMs ?? "—"} ms`
+                : "—";
+              const to = `${bestServer?.name ?? best.serverId} · ${best.latencyMs ?? "—"} ms`;
+              get().notify(
+                `${translate(lang, "servers.autoSwitched")}: ${to} ← ${from}`,
+              );
+            } else {
+              set({ autoCandidateId: best.serverId, autoCandidateWins: wins });
+            }
           }
         } else {
           set({ autoCandidateId: null, autoCandidateWins: 0 });

@@ -209,6 +209,13 @@ pub async fn refresh_profile(app: AppHandle, profile_id: String) -> Result<Impor
 }
 
 #[tauri::command]
+pub fn traffic_stats(state: State<'_, AppState>) -> Result<core::front::TrafficStats, String> {
+    let port =
+        core::front_api_port(&state.core).ok_or_else(|| "front proxy не запущен".to_string())?;
+    core::front::traffic(port).map_err(|error| format!("{error:#}"))
+}
+
+#[tauri::command]
 pub fn set_server_favorite(
     state: State<'_, AppState>,
     server_id: String,
