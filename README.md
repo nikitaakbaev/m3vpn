@@ -101,6 +101,18 @@ sudo pacman -U dist/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
 sudo usermod -aG m3vpn "$USER"
 ```
 
+Если helper ранее ставился вручную через `scripts/install-helper.sh`,
+его файлы не принадлежат pacman. Перед установкой пакета убери старую копию:
+
+```bash
+sudo systemctl disable --now m3vpn-helper
+sudo rm -rf /usr/lib/m3vpn
+sudo rm -f /etc/systemd/system/m3vpn-helper.service
+sudo systemctl daemon-reload
+sudo pacman -U dist/m3vpn-0.1.1-1-x86_64.pkg.tar.zst
+sudo systemctl enable --now m3vpn-helper
+```
+
 Импорт подписки без UI (в ту же SQLite, что использует приложение):
 
 ```bash
