@@ -51,11 +51,13 @@ pub fn empty_info() -> UpdateInfo {
 }
 
 pub fn preferred_kind() -> &'static str {
-    if Path::new("/usr/bin/pacman").exists() {
+    if std::env::var_os("APPIMAGE").is_some() {
+        "appimage"
+    } else if Path::new("/usr/bin/pacman").exists() {
         "arch"
     } else if Path::new("/usr/bin/apt-get").exists() {
         "deb"
-    } else if Path::new("/usr/bin/rpm").exists() {
+    } else if Path::new("/usr/bin/dnf").exists() || Path::new("/usr/bin/rpm").exists() {
         "rpm"
     } else {
         "portable"
@@ -133,7 +135,14 @@ pub fn install_artifact(path: &Path, kind: &str) -> Result<()> {
         "deb" => {
             command.arg("apt-get").arg("install").arg("-y");
         }
-        _ => bail!("автоустановка поддерживается только для Arch и Debian пакетов"),
+        "rpm" => {
+            if Path::new("/usr/bin/dnf").exists() {
+                command.arg("dnf").arg("install").arg("-y");
+            } else {
+                command.arg("rpm").arg("-Uvh");
+            }
+        }
+        _ => bail!("автоустановка поддерживается только для Arch, Debian и RPM пакетов"),
     }
     command.arg(path);
     let status = command

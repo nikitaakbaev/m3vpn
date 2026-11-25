@@ -142,7 +142,7 @@ IPv6 helper блокирует IPv6-выход.
 
 | Проверка | Результат |
 |---|---|
-| App tests | 36/36 + 13 ignored |
+| App tests | 37/37 + 13 ignored |
 | Helper tests | 4/4 + 1 ignored |
 | Rule-set download | 3/3 |
 | sing-box check с rule-set | OK |

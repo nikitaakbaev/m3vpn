@@ -18,6 +18,24 @@ Arch-пакет, без `dpkg-deb`:
 
 Пакет собирается в `dist/m3vpn_<version>-1_amd64.deb`.
 
+### RPM и AppImage
+
+- `scripts/package-rpm.sh` и `packaging/rpm/m3vpn.spec` собирают RPM из
+  общего stage-дерева;
+- `scripts/package-appimage.sh` собирает AppImage с AppRun, который
+  выставляет `M3VPN_SIDECARS` на встроенные sidecars;
+- AppImage работает в proxy-режиме; для TUN нужен системно установленный
+  helper;
+- release workflow устанавливает `rpm-tools` и загружает `.rpm`/`.AppImage`.
+
+### AUR и подписи
+
+- `packaging/aur/PKGBUILD` — бинарный AUR-пакет `m3vpn-bin`;
+- `scripts/update-aur.sh` подставляет версию и SHA-256 после релиза;
+- публикация в AUR требует SSH-ключ AUR и не автоматизируется;
+- release workflow создаёт GitHub build provenance attestation для всех
+  артефактов; `SHA256SUMS` публикуется рядом.
+
 ### Контрольные суммы
 
 `package-arch.sh` теперь создаёт `dist/SHA256SUMS` для Arch-пакета,
@@ -76,22 +94,26 @@ Checksum ищется в `.sha256` и `.sha256sum`, поэтому оба ист
 
 | Проверка | Результат |
 |---|---|
-| App tests | 36/36 + 13 ignored |
+| App tests | 37/37 + 13 ignored |
 | Helper tests | 4/4 + 1 ignored |
 | Parser tests | 18/18 |
 | Xray core update | вручную, OK |
 | sing-box core update | вручную, OK |
 | `.deb` сборка | OK |
+| `.rpm` сборка | OK в Arch-контейнере |
+| AppImage | OK, sidecars внутри |
+| AUR PKGBUILD | подготовлен, публикация требует AUR-ключ |
+| GitHub attestation | добавлена в release workflow |
 | SHA-256 скачивание | проверено на релизных артефактах |
 | clippy / typecheck / build | OK |
 
 ## Осталось
 
-1. `.rpm` в CI.
-2. AppImage.
-3. AUR `PKGBUILD` и публикация.
-4. minisign/подпись `SHA256SUMS`.
-5. Миграция настроек между крупными версиями.
+1. Публикация AUR — требует личный AUR SSH-ключ; PKGBUILD готов.
+2. minisign, если нужна подпись вне GitHub attestation.
+3. Полностью беззвучная установка — только через подписанный репозиторий
+   и hook пакетного менеджера.
+4. Дополнительные тесты миграций на очень старых БД.
 
 Автоскачивание и установка пакета приложения готовы; полностью беззвучная
 установка потребует отдельного подписанного репозитория и hook пакетного

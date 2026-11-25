@@ -180,6 +180,13 @@ fn migrate(conn: &Connection) -> Result<()> {
         "favorite",
         "ALTER TABLE servers ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
     )?;
+    // Bump this when a new schema step is added above. Existing databases keep
+    // all user settings; seed() inserts only missing defaults with OR IGNORE.
+    const SCHEMA_VERSION: i32 = 2;
+    let current: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if current < SCHEMA_VERSION {
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    }
     Ok(())
 }
 
@@ -837,6 +844,21 @@ mod tests {
         assert_eq!(row.loss_percent, 33.3);
         assert_eq!(row.jitter_ms, Some(20.0));
 
+        drop(conn);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), suffix));
+        }
+    }
+
+    #[test]
+    fn schema_version_is_recorded() {
+        let path = std::env::temp_dir().join(format!("m3vpn-schema-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let conn = open(&path).expect("open test database");
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert!(version >= 2);
         drop(conn);
         for suffix in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{}", path.display(), suffix));

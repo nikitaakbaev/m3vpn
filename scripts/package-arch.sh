@@ -66,6 +66,12 @@ tar -C "$STAGE" -czf "$DIST/m3vpn-$VERSION-linux-x86_64.tar.gz" .
 echo "==> Debian package"
 bash scripts/package-deb.sh "$STAGE" "$DIST" "$VERSION"
 
+echo "==> RPM package"
+bash scripts/package-rpm.sh "$STAGE" "$DIST" "$VERSION"
+
+echo "==> AppImage"
+bash scripts/package-appimage.sh "$STAGE" "$DIST" "$VERSION"
+
 echo "==> Arch package"
 sed -i "s/^pkgver=.*/pkgver=$VERSION/" "$ROOT/packaging/arch/PKGBUILD"
 (
@@ -78,7 +84,9 @@ sed -i "s/^pkgver=.*/pkgver=$VERSION/" "$ROOT/packaging/arch/PKGBUILD"
 echo "==> checksums"
 (
   cd "$DIST"
-  sha256sum m3vpn-*.pkg.tar.zst m3vpn-*.tar.gz m3vpn_*.deb > SHA256SUMS
+  shopt -s nullglob
+  files=(m3vpn-*.pkg.tar.zst m3vpn-*.tar.gz m3vpn_*.deb m3vpn-*.rpm m3vpn-*.AppImage)
+  sha256sum "${files[@]}" > SHA256SUMS
 )
 
 echo "==> artifacts"

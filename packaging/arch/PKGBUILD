@@ -1,5 +1,5 @@
 pkgname=m3vpn
-pkgver=0.2.3
+pkgver=0.2.4
 pkgrel=1
 pkgdesc="Material 3 client for Xray, sing-box, Reality, Hysteria 2 and AmneziaWG"
 arch=('x86_64')

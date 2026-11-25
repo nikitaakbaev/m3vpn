@@ -108,10 +108,9 @@ IPv6-политика, FakeDNS Xray, split tunneling по systemd-cgroup и DNS-
 
 Оценка: **2–4 дня**.
 
-Статус: `.deb`/Arch/portable собираются из общего stage, публикуется
-`SHA256SUMS`, приложение скачивает пакет с проверкой SHA-256 и ставит через
-`pkexec`; Xray/sing-box обновляются отдельно из GitHub Releases. Остались
-`.rpm`, AppImage, AUR, подписи артефактов и миграция настроек.
+Статус: **P4 закрыт** — Arch, `.deb`, `.rpm`, AppImage и portable собираются
+из общего stage; `SHA256SUMS`, GitHub attestation; приложение ставит
+обновление через `pkexec`; AUR-PKGBUILD и миграции настроек готовы.
 
 ## P5 — качество и безопасность
 

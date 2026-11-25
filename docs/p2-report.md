@@ -53,7 +53,7 @@ Tauri-команды: `set_server_favorite`, `set_server_tags`.
 
 | Проверка | Результат |
 |---|---|
-| App tests | 36/36 + 13 ignored |
+| App tests | 37/37 + 13 ignored |
 | Helper tests | 4/4 + 1 ignored |
 | Parser tests | 18/18 |
 | typecheck / build | OK |
@@ -77,7 +77,7 @@ Tauri-команды: `set_server_favorite`, `set_server_tags`.
 
 | Проверка | Результат |
 |---|---|
-| App tests | 36/36 + 13 ignored |
+| App tests | 37/37 + 13 ignored |
 | Helper tests | 4/4 + 1 ignored |
 | Parser tests | 18/18 |
 | typecheck / build | OK |

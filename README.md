@@ -55,7 +55,7 @@
 - **Обновления** — приложение, Xray и sing-box проверяются через GitHub
   Releases; пакет приложения скачивается с проверкой SHA-256 и ставится
   одной кнопкой через `pkexec`; артефакты сопровождаются `SHA256SUMS`.
-- **Упаковка** — Arch-пакет, Debian-пакет и portable tar.gz.
+- **Упаковка** — Arch-пакет, Debian-пакет, RPM, AppImage и portable tar.gz.
 
 ## Скриншоты
 
@@ -75,7 +75,7 @@
 Скачай `.pkg.tar.zst` из [последнего релиза](https://github.com/nikitaakbaev/m3vpn/releases/latest):
 
 ```bash
-sudo pacman -U m3vpn-0.2.3-1-x86_64.pkg.tar.zst
+sudo pacman -U m3vpn-0.2.4-1-x86_64.pkg.tar.zst
 sudo systemctl enable --now m3vpn-helper
 sudo usermod -aG m3vpn "$USER"
 ```
@@ -85,15 +85,37 @@ sudo usermod -aG m3vpn "$USER"
 ### Debian / Ubuntu
 
 ```bash
-sudo apt install ./m3vpn_0.2.3-1_amd64.deb
+sudo apt install ./m3vpn_0.2.4-1_amd64.deb
 ```
+
+### Fedora / openSUSE
+
+```bash
+sudo dnf install ./m3vpn-0.2.4-1.x86_64.rpm
+```
+
+или:
+
+```bash
+sudo rpm -Uvh m3vpn-0.2.4-1.x86_64.rpm
+```
+
+### AppImage
+
+```bash
+chmod +x m3vpn-0.2.4-x86_64.AppImage
+./m3vpn-0.2.4-x86_64.AppImage
+```
+
+AppImage работает в proxy-режиме. Для TUN нужен системно установленный
+`m3vpn-helper` (Arch/Debian/RPM-пакет).
 
 ### Portable
 
 Portable-архив содержит готовое дерево `/usr`:
 
 ```bash
-sudo tar -xzf m3vpn-0.2.3-linux-x86_64.tar.gz -C /
+sudo tar -xzf m3vpn-0.2.4-linux-x86_64.tar.gz -C /
 sudo systemctl enable --now m3vpn-helper
 ```
 
@@ -185,15 +207,18 @@ bash scripts/package-arch.sh
 Результат в `dist/`:
 
 ```text
-m3vpn-0.2.3-1-x86_64.pkg.tar.zst
-m3vpn_0.2.3-1_amd64.deb
-m3vpn-0.2.3-linux-x86_64.tar.gz
+m3vpn-0.2.4-1-x86_64.pkg.tar.zst
+m3vpn_0.2.4-1_amd64.deb
+m3vpn-0.2.4-1.x86_64.rpm
+m3vpn-0.2.4-x86_64.AppImage
+m3vpn-0.2.4-linux-x86_64.tar.gz
 SHA256SUMS
 ```
 
 ## Дорожная карта
 
-- **P4** — `.rpm`, AppImage, AUR, подписи артефактов.
+- **P4** — закрыт: Arch, `.deb`, `.rpm`, AppImage, portable, AUR-PKGBUILD,
+  SHA256SUMS и GitHub attestation. Публикация в AUR — по личному ключу.
 - **P6** — Android: `VpnService`, foreground service, per-app split tunneling.
 - **P7** — Windows: Wintun, служба маршрутов/firewall, подпись драйвера.
 
@@ -206,6 +231,7 @@ SHA256SUMS
 - [P4 — упаковка и обновления](docs/p4-report.md)
 - [План фронтенд-рефакторинга](docs/frontend-refactor-plan.md)
 - [Использованные skills](docs/skills.md)
+- [Миграции настроек](docs/migrations.md)
 
 ## Лицензия
 

@@ -14,3 +14,7 @@ apps/desktop/src-tauri/gen
 /packaging/arch/pkg/
 /packaging/arch/*.pkg.tar.*
 /packaging/arch/helper-target/
+/packaging/rpm/rpmbuild/
+/packaging/appimage/AppDir/
+/dist-rpm/
+/dist-rpm2/

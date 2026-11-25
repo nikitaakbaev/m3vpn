@@ -48,7 +48,9 @@ export function SettingsPage() {
   const installable =
     updateInfo?.available === true &&
     preferredArtifact !== null &&
-    (preferredArtifact.kind === "arch" || preferredArtifact.kind === "deb");
+    (preferredArtifact.kind === "arch" ||
+      preferredArtifact.kind === "deb" ||
+      preferredArtifact.kind === "rpm");
 
   const installAppUpdate = async () => {
     if (!preferredArtifact) return;
@@ -748,9 +750,15 @@ export function SettingsPage() {
                     >
                       {artifact.kind === "arch"
                         ? t("settings.updateArch")
-                        : artifact.kind === "portable"
-                          ? t("settings.updatePortable")
-                          : artifact.kind}
+                        : artifact.kind === "deb"
+                          ? t("settings.updateDeb")
+                          : artifact.kind === "rpm"
+                            ? t("settings.updateRpm")
+                            : artifact.kind === "appimage"
+                              ? t("settings.updateAppImage")
+                              : artifact.kind === "portable"
+                                ? t("settings.updatePortable")
+                                : artifact.kind}
                     </Button>
                   ))}
                 </div>
