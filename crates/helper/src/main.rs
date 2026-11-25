@@ -14,6 +14,8 @@ const DEFAULT_SOCKET: &str = "/run/m3vpn/helper.sock";
 const DEFAULT_RUN_DIR: &str = "/run/m3vpn";
 const DEFAULT_SINGBOX: &str = "/usr/lib/m3vpn/sidecars/bin/hiddify-sing-box";
 const FRONT_MARK: &str = "0x2022";
+const PROXY_CGROUP: &str = "/sys/fs/cgroup/m3vpn-proxy";
+const MARK_TABLE: &str = "m3vpn_mark";
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -26,11 +28,16 @@ enum Request {
         kill_switch: bool,
         #[serde(default)]
         dns: Vec<Value>,
+        #[serde(default)]
+        proxy_pids: Vec<u32>,
     },
     StopTun,
     Status,
     Panic,
     Restore,
+    JoinCgroup {
+        pid: u32,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -80,6 +87,7 @@ fn main() {
         "stop" => client_command(json!({ "cmd": "stop_tun" })).map(|value| print_json(&value)),
         "panic" => client_command(json!({ "cmd": "panic" })).map(|value| print_json(&value)),
         "start-tun" => client_command(parse_start_args(&args)).map(|value| print_json(&value)),
+        "launch" => launch_core(&args),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -105,7 +113,7 @@ fn print_json(value: &Value) {
 
 fn print_help() {
     println!(
-        "m3vpn-helper run | status | stop | panic | restore | start-tun --app-pid N --socks-port N [--front-pid N] [--kill-switch]"
+        "m3vpn-helper run | status | stop | panic | restore | start-tun --app-pid N --socks-port N --proxy-pid N [--proxy-pid N ...] [--front-pid N] [--kill-switch]"
     );
 }
 
@@ -159,6 +167,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             socks_port,
             kill_switch,
             dns,
+            proxy_pids,
         } => start_tun(
             &state,
             &run_dir,
@@ -167,6 +176,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             socks_port,
             kill_switch,
             &dns,
+            &proxy_pids,
         ),
         Request::StopTun => stop_tun(&state, &run_dir),
         Request::Status => {
@@ -180,6 +190,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             restore_from_disk(&run_dir)?;
             Ok(Response::ok(false))
         }
+        Request::JoinCgroup { pid } => join_cgroup(pid).map(|_| Response::ok(false)),
     }
     .unwrap_or_else(|error| Response::error(format!("{error:#}")));
 
@@ -189,6 +200,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn start_tun(
     state: &Shared,
     run_dir: &Path,
@@ -197,6 +209,7 @@ fn start_tun(
     socks_port: u16,
     kill_switch: bool,
     dns: &[Value],
+    proxy_pids: &[u32],
 ) -> Result<Response> {
     {
         let session = state
@@ -220,6 +233,11 @@ fn start_tun(
 
     snapshot(run_dir)?;
     let bypass = install_front_bypass()?;
+    if let Err(error) = install_proxy_mark(proxy_pids) {
+        drop(bypass);
+        restore_network(run_dir);
+        return Err(error);
+    }
     let config_path = run_dir.join("tun.json");
     fs::write(
         &config_path,
@@ -240,6 +258,13 @@ fn start_tun(
         .spawn()
         .with_context(|| format!("spawn {}", binary.display()))?;
 
+    if let Err(error) = add_proxy_pid(child.id()) {
+        let _ = child.kill();
+        let _ = child.wait();
+        cleanup_tun_interface();
+        restore_network(run_dir);
+        return Err(error);
+    }
     if let Err(error) = wait_for_interface(&mut child, run_dir) {
         let _ = child.kill();
         let _ = child.wait();
@@ -428,6 +453,7 @@ fn remove_front_bypass() {
 
 fn cleanup_tun_interface() {
     let _ = Command::new("ip").args(["link", "delete", IFACE]).output();
+    remove_proxy_mark();
     remove_front_bypass();
     for priority in 9000..=9010 {
         loop {
@@ -444,6 +470,104 @@ fn cleanup_tun_interface() {
     }
     let _ = Command::new("ip")
         .args(["route", "flush", "table", "2022"])
+        .output();
+}
+
+/// Moves front/backend processes into a dedicated cgroup. A root-owned nft
+/// output rule marks packets from that cgroup, so proxy transport bypasses TUN
+/// without giving the unprivileged sidecars CAP_NET_ADMIN for SO_MARK.
+fn install_proxy_mark(proxy_pids: &[u32]) -> Result<()> {
+    if std::env::var("M3VPN_SKIP_CGROUP_MARK").as_deref() == Ok("1") {
+        return Ok(());
+    }
+    if proxy_pids.is_empty() {
+        bail!("no proxy processes passed for TUN marking");
+    }
+    if let Some(pid) = proxy_pids.iter().find(|pid| !pid_in_proxy_cgroup(**pid)) {
+        bail!(
+            "proxy process {pid} is not in {PROXY_CGROUP}; restart the connection after installing 0.2.0"
+        );
+    }
+    fs::create_dir_all(PROXY_CGROUP).with_context(|| format!("create cgroup {PROXY_CGROUP}"))?;
+    remove_proxy_mark();
+    let chain = "{ type route hook output priority -150; }";
+    let commands: Vec<Vec<String>> = vec![
+        vec![
+            "add".into(),
+            "table".into(),
+            "inet".into(),
+            MARK_TABLE.into(),
+        ],
+        vec![
+            "add".into(),
+            "chain".into(),
+            "inet".into(),
+            MARK_TABLE.into(),
+            "output".into(),
+            chain.into(),
+        ],
+        vec![
+            "add".into(),
+            "rule".into(),
+            "inet".into(),
+            MARK_TABLE.into(),
+            "output".into(),
+            "socket".into(),
+            "cgroupv2".into(),
+            "level".into(),
+            "1".into(),
+            "m3vpn-proxy".into(),
+            "meta".into(),
+            "mark".into(),
+            "set".into(),
+            FRONT_MARK.into(),
+        ],
+    ];
+    for args in commands {
+        let output = Command::new("nft")
+            .args(&args)
+            .output()
+            .context("run nft")?;
+        if !output.status.success() {
+            remove_proxy_mark();
+            bail!(
+                "nft mark rule failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+    Ok(())
+}
+
+fn add_proxy_pid(pid: u32) -> Result<()> {
+    if std::env::var("M3VPN_SKIP_CGROUP_MARK").as_deref() == Ok("1") {
+        return Ok(());
+    }
+    fs::write(format!("{PROXY_CGROUP}/cgroup.procs"), pid.to_string())
+        .with_context(|| format!("move pid {pid} to {PROXY_CGROUP}"))?;
+    Ok(())
+}
+
+fn join_cgroup(pid: u32) -> Result<()> {
+    if std::env::var("M3VPN_SKIP_CGROUP_MARK").as_deref() == Ok("1") {
+        return Ok(());
+    }
+    fs::create_dir_all(PROXY_CGROUP).with_context(|| format!("create cgroup {PROXY_CGROUP}"))?;
+    add_proxy_pid(pid)
+}
+
+fn pid_in_proxy_cgroup(pid: u32) -> bool {
+    if std::env::var("M3VPN_SKIP_CGROUP_MARK").as_deref() == Ok("1") {
+        return true;
+    }
+    fs::read_to_string(format!("/proc/{pid}/cgroup"))
+        .map(|text| text.lines().any(|line| line.ends_with("/m3vpn-proxy")))
+        .unwrap_or(false)
+}
+
+fn remove_proxy_mark() {
+    let _ = Command::new("nft")
+        .args(["delete", "table", "inet", MARK_TABLE])
         .output();
 }
 
@@ -733,6 +857,7 @@ fn parse_start_args(args: &[String]) -> Value {
     let mut front_pid: Option<u32> = None;
     let mut socks_port = 0u16;
     let mut kill_switch = false;
+    let mut proxy_pids: Vec<u32> = Vec::new();
     let mut iter = args.iter().skip(2);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -742,6 +867,11 @@ fn parse_start_args(args: &[String]) -> Value {
             }
             "--socks-port" => socks_port = iter.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             "--kill-switch" => kill_switch = true,
+            "--proxy-pid" => {
+                if let Some(pid) = iter.next().and_then(|v| v.parse().ok()) {
+                    proxy_pids.push(pid);
+                }
+            }
             _ => {}
         }
     }
@@ -750,8 +880,33 @@ fn parse_start_args(args: &[String]) -> Value {
         "app_pid": app_pid,
         "front_pid": front_pid,
         "socks_port": socks_port,
-        "kill_switch": kill_switch
+        "kill_switch": kill_switch,
+        "proxy_pids": proxy_pids
     })
+}
+
+/// Unprivileged launcher used by the app for proxy cores. It joins the TUN
+/// proxy cgroup before exec, so every socket the core creates is marked by the
+/// helper's nftables rule. If the helper is unavailable the core still starts,
+/// keeping proxy mode fail-open.
+fn launch_core(args: &[String]) -> Result<()> {
+    let separator = args
+        .iter()
+        .position(|arg| arg == "--")
+        .ok_or_else(|| anyhow::anyhow!("usage: m3vpn-helper launch -- <program> [args...]"))?;
+    let program = args
+        .get(separator + 1)
+        .ok_or_else(|| anyhow::anyhow!("missing program after --"))?;
+    let program_args = &args[separator + 2..];
+    if let Err(error) = client_command(json!({
+        "cmd": "join_cgroup",
+        "pid": std::process::id()
+    })) {
+        eprintln!("m3vpn-helper launch: proxy cgroup skipped: {error:#}");
+    }
+    use std::os::unix::process::CommandExt;
+    let error = Command::new(program).args(program_args).exec();
+    Err(anyhow::Error::from(error)).with_context(|| format!("exec {program}"))
 }
 
 fn client_command(request: Value) -> Result<Value> {

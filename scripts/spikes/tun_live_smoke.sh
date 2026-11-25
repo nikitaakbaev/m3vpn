@@ -5,7 +5,8 @@
 #
 #   M3VPN_TUN_SMOKE=1 bash scripts/spikes/tun_live_smoke.sh
 #
-# Optional: M3VPN_TUN_KILL_SWITCH=1, APP_PID=..., FRONT_PID=..., SOCKS_PORT=...
+# Optional: M3VPN_TUN_KILL_SWITCH=1, APP_PID=..., FRONT_PID=..., BACKEND_PID=...,
+# SOCKS_PORT=...
 set -euo pipefail
 
 if [[ "${M3VPN_TUN_SMOKE:-0}" != "1" ]]; then
@@ -20,15 +21,17 @@ SOCKET="${M3VPN_HELPER_SOCKET:-/run/m3vpn/helper.sock}"
 
 APP_PID="${APP_PID:-$(pgrep -n -x m3vpn || true)}"
 FRONT_PID="${FRONT_PID:-$(pgrep -n -f 'hiddify-sing-box run -c .*front.json' || true)}"
+BACKEND_PID="${BACKEND_PID:-$(pgrep -n -f '/(hiddify-sing-box|xray) run -c .*/(singbox|xray)\.json' || true)}"
 SOCKS_PORT="${SOCKS_PORT:-10808}"
 KILL_SWITCH="${M3VPN_TUN_KILL_SWITCH:-0}"
 [[ -n "$APP_PID" ]] || { echo "m3vpn app is not running" >&2; exit 1; }
 [[ -n "$FRONT_PID" ]] || { echo "front proxy is not running" >&2; exit 1; }
+[[ -n "$BACKEND_PID" ]] || { echo "proxy backend is not running (connect first)" >&2; exit 1; }
 
 trap '"$HELPER" stop >/dev/null 2>&1 || true' EXIT
 
-echo "app=$APP_PID front=$FRONT_PID socks=$SOCKS_PORT kill_switch=$KILL_SWITCH"
-args=(start-tun --app-pid "$APP_PID" --front-pid "$FRONT_PID" --socks-port "$SOCKS_PORT")
+echo "app=$APP_PID front=$FRONT_PID backend=$BACKEND_PID socks=$SOCKS_PORT kill_switch=$KILL_SWITCH"
+args=(start-tun --app-pid "$APP_PID" --front-pid "$FRONT_PID" --proxy-pid "$FRONT_PID" --proxy-pid "$BACKEND_PID" --socks-port "$SOCKS_PORT")
 [[ "$KILL_SWITCH" == "1" ]] && args+=(--kill-switch)
 "$HELPER" "${args[@]}"
 

@@ -508,7 +508,8 @@ button {
 }
 
 .m3-switch.is-on .m3-switch__thumb {
-  left: 28px;
+  /* inner track is 48px wide: 24px thumb + 4px inset on both sides */
+  left: 20px;
   width: 24px;
   height: 24px;
   background: var(--m3-accent-ink);
@@ -2464,6 +2465,64 @@ input[type="number"]::-webkit-inner-spin-button {
   color: var(--m3-text-muted);
   font-size: 12.5px;
   white-space: pre-wrap;
+}
+
+.update-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--m3-text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.update-notes p {
+  color: inherit;
+  font-size: inherit;
+  white-space: normal;
+}
+
+.update-notes__heading {
+  color: var(--md-sys-color-on-surface);
+  font-size: 13px;
+}
+
+.update-notes__list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.update-notes__list li::marker {
+  color: var(--m3-accent);
+}
+
+.update-notes__link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--m3-accent);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.update-notes__changelog {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--m3-accent) 30%, var(--m3-border));
+  background: color-mix(in srgb, var(--m3-accent) 8%, transparent);
+  color: var(--m3-accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .update-artifacts {

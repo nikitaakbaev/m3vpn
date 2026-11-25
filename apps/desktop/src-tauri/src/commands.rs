@@ -288,12 +288,20 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
         if state.setting("mode").as_deref() == Some("tun") {
             let front_pid = core::front_pid(&state.core);
             let kill_switch = state.setting_bool("tun.kill_switch", false);
+            let mut proxy_pids = Vec::new();
+            if let Some(pid) = front_pid {
+                proxy_pids.push(pid);
+            }
+            if let Some(pid) = status.pid {
+                proxy_pids.push(pid);
+            }
             if let Err(error) = state.helper.start_tun(
                 std::process::id(),
                 front_pid,
                 status.socks_port,
                 kill_switch,
                 &tun_dns,
+                &proxy_pids,
             ) {
                 core::disconnect(&state.core, &state.paths);
                 return Err(format!("TUN helper: {error:#}"));

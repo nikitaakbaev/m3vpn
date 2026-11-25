@@ -19,6 +19,7 @@ WORK="\$(mktemp -d)"
 export M3VPN_RUN_DIR="\$WORK/run"
 export M3VPN_HELPER_SOCKET="\$WORK/run/helper.sock"
 export M3VPN_SINGBOX="\$SINGBOX"
+export M3VPN_SKIP_CGROUP_MARK=1
 mkdir -p "\$M3VPN_RUN_DIR"
 
 cleanup() {
@@ -64,7 +65,7 @@ done
 
 ip -j route show table all | jq -S 'sort_by(.dst, .dev)' > "\$WORK/routes.before"
 ip rule show > "\$WORK/rules.before"
-"$HELPER" start-tun --app-pid \$\$ --front-pid \$FRONT_PID --socks-port 10808 >/dev/null
+"$HELPER" start-tun --app-pid \$\$ --front-pid \$FRONT_PID --proxy-pid \$FRONT_PID --socks-port 10808 >/dev/null
 
 if ! ip link show m3vpn0 >/dev/null 2>&1; then
   echo "TUN interface missing" >&2
@@ -101,7 +102,7 @@ if ! diff -u "\$WORK/rules.before" "\$WORK/rules.after"; then
   exit 1
 fi
 
-"$HELPER" start-tun --app-pid \$\$ --front-pid \$FRONT_PID --socks-port 10808 --kill-switch >/dev/null
+"$HELPER" start-tun --app-pid \$\$ --front-pid \$FRONT_PID --proxy-pid \$FRONT_PID --socks-port 10808 --kill-switch >/dev/null
 for _ in \$(seq 1 100); do
   ip link show m3vpn0 >/dev/null 2>&1 && break
   sleep 0.1

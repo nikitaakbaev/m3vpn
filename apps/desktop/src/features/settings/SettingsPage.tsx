@@ -6,6 +6,7 @@ import { Segmented } from "../../components/Segmented";
 import { Switch } from "../../components/Switch";
 import { Icon } from "../../components/Icon";
 import { useAppStore, useT } from "../../store/useAppStore";
+import { ReleaseNotes } from "./ReleaseNotes";
 import type { ThemeMode } from "../../theme";
 
 const SWATCHES = ["#22C55E", "#2563EB", "#7C3AED", "#EA580C", "#0F766E", "#CA8A04"];
@@ -563,7 +564,12 @@ export function SettingsPage() {
                   </span>
                 </div>
               </div>
-              {updateInfo.notes ? <p>{updateInfo.notes}</p> : null}
+              {updateInfo.notes ? (
+                <ReleaseNotes
+                  notes={updateInfo.notes}
+                  onOpen={(url) => void openUpdateArtifact(url)}
+                />
+              ) : null}
               {updateInfo.artifacts.length > 0 || updateInfo.releaseUrl ? (
                 <div className="update-artifacts">
                   {updateInfo.releaseUrl ? (

@@ -46,8 +46,7 @@ pub fn config(socks_port: u16, http_port: u16, api_port: u16, slot_a: u16, slot_
         ],
         "route": {
             "rules": [{ "action": "sniff" }],
-            "final": "proxy",
-            "default_mark": super::ROUTING_MARK
+            "final": "proxy"
         },
         "experimental": {
             "clash_api": {
@@ -93,8 +92,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn front_outbound_traffic_bypasses_tun() {
+    fn front_config_has_no_socket_mark() {
+        // The helper marks the proxy cgroup with nftables; the unprivileged
+        // sidecar must not try SO_MARK itself (it would fail with EPERM).
         let config = config(10808, 10809, 11308, 11808, 11818);
-        assert_eq!(config["route"]["default_mark"], super::super::ROUTING_MARK);
+        assert!(config["route"].get("default_mark").is_none());
     }
 }

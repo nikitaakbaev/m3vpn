@@ -1,7 +1,8 @@
 # P1 — TUN и сеть
 
 Дата: 2026-11-25
-Статус: код готов, пакет 0.2.0 собран; живой smoke ожидает установки
+Статус: живой smoke нашёл проблему с SO_MARK; исправлено cgroup-маркировкой,
+нужна повторная установка 0.2.0 и smoke
 
 ## Главная находка: петля TUN → front → TUN
 
@@ -13,14 +14,28 @@ TUN. Получалась петля:
 front → remote → TUN → front → remote → ...
 ```
 
+Первая попытка исправления ставила `default_mark` / `sockopt.mark` прямо
+в конфиги front и backend. Живой smoke показал, что это не работает:
+`SO_MARK` требует `CAP_NET_ADMIN`, а sidecar'ы запускаются непривилегированно.
+Каждый сокет падал с `operation not permitted`, и TUN-трафик не проходил.
+
 Исправление:
 
-- front sing-box получает `route.default_mark = 0x2022`;
-- Xray-бэкенды получают `streamSettings.sockopt.mark = 0x2022`;
-- sing-box-бэкенды получают `route.default_mark = 0x2022`;
+- helper создаёт cgroup v2 `/sys/fs/cgroup/m3vpn-proxy`;
+- app запускает front/backend через `m3vpn-helper launch -- <core>`;
+- launcher просит helper добавить свой PID в cgroup **до exec**, поэтому все
+  сокеты ядра создаются уже в нужной cgroup;
+- helper ставит nft-правило
+  `socket cgroupv2 level 1 "m3vpn-proxy" meta mark set 0x2022` в цепочке
+  `type route hook output priority -150`;
 - helper добавляет `ip rule fwmark 0x2022 lookup main priority 8999`;
 - трафик с меткой уходит в main table, минуя TUN;
-- kill switch разрешает `meta mark 0x2022`, поэтому VPN-транспорт не режется.
+- kill switch разрешает `meta mark 0x2022`, поэтому VPN-транспорт не режется;
+- TUN-ядро helper добавляет в ту же cgroup перед запуском трафика;
+- `start_tun` проверяет, что переданные PID уже находятся в cgroup; иначе
+  просит переподключиться, чтобы не включить петлю;
+- `M3VPN_SKIP_CGROUP_MARK=1` используется только в netns-тесте, где cgroup
+  недоступна.
 
 Удаление:
 
@@ -45,14 +60,14 @@ front → remote → TUN → front → remote → ...
 
 | Проверка | Результат |
 |---|---|
-| App tests | 28/28 + 9 ignored |
-| Helper tests | 2/2 |
+| App tests | 31/31 + 11 ignored |
+| Helper tests | 3/3 + 1 ignored |
 | `cargo clippy -D warnings` | OK |
 | `npm run typecheck` / build | OK |
 | Helper netns + fwmark | `HELPER_NETNS_OK` |
 | Helper netns + kill switch | OK |
 | TUN-пакет 0.2.0 | собран |
-| Живой TUN smoke | ожидает установки 0.2.0 |
+| Живой TUN smoke | нашёл EPERM на SO_MARK; исправление готово |
 
 ## Как проверить на живой системе
 
@@ -74,6 +89,6 @@ M3VPN_TUN_SMOKE=1 M3VPN_TUN_KILL_SWITCH=1 \
 
 ## Осталось
 
-- Установить 0.2.0 и прогнать live smoke.
-- Проверить IPv6/DNS на реальном провайдере.
+- Переустановить 0.2.0 с cgroup-маркировкой и перезапустить приложение.
+- Прогнать live smoke; проверить DNS и IPv6.
 - После успешного smoke поставить тег `v0.2.0` и выпустить GitHub Release.

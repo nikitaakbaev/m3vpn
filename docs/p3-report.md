@@ -73,7 +73,7 @@
 
 | Проверка | Результат |
 |---|---|
-| App tests | 30/30 + 11 ignored |
+| App tests | 31/31 + 11 ignored |
 | Helper tests | 3/3 + 1 ignored |
 | Rule-set download | 3/3 |
 | sing-box check с rule-set | OK |

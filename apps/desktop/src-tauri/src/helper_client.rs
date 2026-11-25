@@ -6,6 +6,25 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 const DEFAULT_SOCKET: &str = "/run/m3vpn/helper.sock";
+const INSTALLED_HELPER: &str = "/usr/lib/m3vpn/m3vpn-helper";
+
+/// Locates the helper binary so proxy cores can be launched through it.
+/// The helper is also a small unprivileged launcher that joins the TUN proxy
+/// cgroup before exec, which is required for cgroup-based packet marking.
+pub fn helper_binary() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("M3VPN_HELPER_BIN") {
+        return Some(PathBuf::from(path));
+    }
+    let installed = PathBuf::from(INSTALLED_HELPER);
+    if installed.exists() {
+        return Some(installed);
+    }
+    let sibling = std::env::current_exe()
+        .ok()?
+        .parent()
+        .map(|dir| dir.join("m3vpn-helper"))?;
+    sibling.exists().then_some(sibling)
+}
 
 #[derive(Clone)]
 pub struct HelperClient {
@@ -35,6 +54,7 @@ impl HelperClient {
         socks_port: u16,
         kill_switch: bool,
         dns: &[Value],
+        proxy_pids: &[u32],
     ) -> Result<()> {
         self.call(json!({
             "cmd": "start_tun",
@@ -42,7 +62,8 @@ impl HelperClient {
             "front_pid": front_pid,
             "socks_port": socks_port,
             "kill_switch": kill_switch,
-            "dns": dns
+            "dns": dns,
+            "proxy_pids": proxy_pids
         }))
         .map(|_| ())
     }

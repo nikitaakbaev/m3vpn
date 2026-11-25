@@ -17,7 +17,6 @@ pub fn patch(
     patch_log(root, log_path, log_level);
     patch_inbounds(root, socks_port, http_port);
     ensure_outbounds(root);
-    patch_outbound_marks(root);
     patch_routing(root, &dns_ips);
 
     let has_observatory = root.contains_key("observatory") || root.contains_key("burstObservatory");
@@ -128,34 +127,6 @@ fn ensure_outbounds(root: &mut Map<String, Value>) {
     }
 }
 
-fn patch_outbound_marks(root: &mut Map<String, Value>) {
-    let Some(outbounds) = root.get_mut("outbounds").and_then(Value::as_array_mut) else {
-        return;
-    };
-    for outbound in outbounds {
-        if outbound.get("protocol").and_then(Value::as_str) == Some("blackhole") {
-            continue;
-        }
-        let stream = outbound
-            .as_object_mut()
-            .expect("outbound object")
-            .entry("streamSettings")
-            .or_insert_with(|| json!({}));
-        if !stream.is_object() {
-            *stream = json!({});
-        }
-        let stream = stream.as_object_mut().expect("streamSettings object");
-        let sockopt = stream.entry("sockopt").or_insert_with(|| json!({}));
-        if !sockopt.is_object() {
-            *sockopt = json!({});
-        }
-        sockopt
-            .as_object_mut()
-            .expect("sockopt object")
-            .insert("mark".into(), json!(crate::core::ROUTING_MARK));
-    }
-}
-
 fn patch_routing(root: &mut Map<String, Value>, dns_ips: &[String]) {
     let routing = root
         .entry("routing")
@@ -241,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn marks_outbound_sockets_to_bypass_tun() {
+    fn does_not_mark_xray_sockets() {
         let mut config = json!({
             "inbounds": [],
             "outbounds": [
@@ -258,15 +229,14 @@ mod tests {
             "warning",
         )
         .unwrap();
-        assert_eq!(
-            config["outbounds"][0]["streamSettings"]["sockopt"]["mark"],
-            crate::core::ROUTING_MARK
-        );
-        assert_eq!(
-            config["outbounds"][1]["streamSettings"]["sockopt"]["mark"],
-            crate::core::ROUTING_MARK
-        );
-        assert!(config["outbounds"][2].get("streamSettings").is_none());
+        assert!(config["outbounds"][0]
+            .get("streamSettings")
+            .and_then(|stream| stream.get("sockopt"))
+            .is_none());
+        assert!(config["outbounds"][1]
+            .get("streamSettings")
+            .and_then(|stream| stream.get("sockopt"))
+            .is_none());
     }
 
     #[test]
