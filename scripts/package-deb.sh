@@ -53,7 +53,8 @@ if ! getent group m3vpn >/dev/null; then
   groupadd --system m3vpn
 fi
 systemctl daemon-reload >/dev/null 2>&1 || true
-systemctl enable --now m3vpn-helper.service >/dev/null 2>&1 || true
+systemctl enable m3vpn-helper.service >/dev/null 2>&1 || true
+systemctl restart m3vpn-helper.service >/dev/null 2>&1 || true
 if [ -n "${SUDO_USER:-}" ] && id "$SUDO_USER" >/dev/null 2>&1; then
   usermod -aG m3vpn "$SUDO_USER" || true
 fi

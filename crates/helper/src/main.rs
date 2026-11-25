@@ -669,7 +669,6 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
                 }
             ],
             "final": "proxy",
-            "auto_detect_interface": true,
             "default_mark": 0x2022
         }
     })
