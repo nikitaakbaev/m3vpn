@@ -38,6 +38,7 @@ impl HelperClient {
         dns: &[Value],
         proxy_pids: &[u32],
         ipv6: bool,
+        split_cgroups: &[String],
     ) -> Result<()> {
         self.call(json!({
             "cmd": "start_tun",
@@ -47,7 +48,8 @@ impl HelperClient {
             "kill_switch": kill_switch,
             "dns": dns,
             "proxy_pids": proxy_pids,
-            "ipv6": ipv6
+            "ipv6": ipv6,
+            "split_cgroups": split_cgroups
         }))
         .map(|_| ())
     }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
@@ -9,7 +9,7 @@ import { Icon } from "../../components/Icon";
 import { useAppStore, useT } from "../../store/useAppStore";
 import { ReleaseNotes } from "./ReleaseNotes";
 import type { ThemeMode } from "../../theme";
-import type { CoreVersion } from "../../lib/tauri";
+import type { CoreVersion, SplitApp } from "../../lib/tauri";
 import * as api from "../../lib/tauri";
 
 const SWATCHES = ["#22C55E", "#2563EB", "#7C3AED", "#EA580C", "#0F766E", "#CA8A04"];
@@ -37,12 +37,11 @@ export function SettingsPage() {
   const checkUpdates = useAppStore((state) => state.checkUpdates);
   const openUpdateArtifact = useAppStore((state) => state.openUpdateArtifact);
   const isConnected = useAppStore((state) => state.status.running);
-  const connect = useAppStore((state) => state.connect);
-  const disconnect = useAppStore((state) => state.disconnect);
 
   const [coreVersions, setCoreVersions] = useState<CoreVersion[]>([]);
   const [coreBusy, setCoreBusy] = useState<string | null>(null);
   const [updateAction, setUpdateAction] = useState<"download" | "install" | null>(null);
+  const [splitApps, setSplitApps] = useState<SplitApp[]>([]);
 
   const preferredArtifact =
     updateInfo?.artifacts.find((artifact) => artifact.kind === updateInfo.preferredKind) ?? null;
@@ -70,10 +69,29 @@ export function SettingsPage() {
     }
   };
 
+  const splitSelected = (() => {
+    try {
+      const parsed: unknown = JSON.parse(settings["tun.split_apps"] ?? "[]");
+      return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+    } catch {
+      return new Set<string>();
+    }
+  })();
+
+  const toggleSplitApp = (cgroup: string, checked: boolean) => {
+    const next = new Set(splitSelected);
+    if (checked) next.add(cgroup);
+    else next.delete(cgroup);
+    void set("tun.split_apps", JSON.stringify([...next]));
+  };
+
+  useEffect(() => {
+    void api.listSplitApps().then(setSplitApps).catch(() => setSplitApps([]));
+  }, []);
+
   const theme = (settings["ui.theme"] ?? "dark") as ThemeMode;
   const seed = settings["ui.seed_color"] ?? "#22C55E";
   const language = settings["ui.language"] === "en" ? "en" : "ru";
-  const mode = settings["mode"] === "tun" ? "tun" : "proxy";
   const helperAvailable = info?.helperAvailable ?? false;
   const autoPort = settings["proxy.auto_port"] !== "false";
   const activePort = settings["proxy.active_port"] ?? String(info?.proxyPort ?? 10808);
@@ -218,32 +236,28 @@ export function SettingsPage() {
             <h2>{t("settings.connection")}</h2>
           </div>
 
-          <div className="settings-row">
+          <div className="settings-row settings-row--column">
             <div className="settings-row__text">
-              <strong>{t("settings.mode")}</strong>
+              <strong>{t("settings.splitTunnel")}</strong>
+              <span>{t("settings.splitTunnelHint")}</span>
             </div>
-            <Segmented
-              value={mode}
-              label={t("settings.mode")}
-              options={[
-                { value: "proxy", label: t("home.proxy"), icon: "public" },
-                { value: "tun", label: t("home.tun"), icon: "shield", disabled: !helperAvailable },
-              ]}
-              onChange={(value) => {
-                void (async () => {
-                  if (isConnected) {
-                    await disconnect();
-                    await set("mode", value);
-                    await connect();
-                  } else {
-                    await set("mode", value);
-                  }
-                })();
-              }}
-            />
+            {splitApps.length > 0 ? (
+              <div className="split-apps">
+                {splitApps.map((app) => (
+                  <label key={app.cgroup} className="split-app" title={app.cgroup}>
+                    <input
+                      type="checkbox"
+                      checked={splitSelected.has(app.cgroup)}
+                      onChange={(event) => toggleSplitApp(app.cgroup, event.target.checked)}
+                    />
+                    <span>{app.label}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="hint">{t("settings.splitTunnelEmpty")}</p>
+            )}
           </div>
-          <p className="hint">{helperAvailable ? t("settings.tunReadyHint") : t("settings.tunMissingHint")}</p>
-
           <div className="settings-row">
             <div className="settings-row__text">
               <strong>{t("settings.proxyPort")}</strong>

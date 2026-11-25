@@ -43,6 +43,9 @@
 по локали/часовому поясу.
 - **IPv6-политика** — можно отключить IPv6 в TUN; helper блокирует IPv6,
   чтобы не было утечек.
+- **Split tunneling** — выбранные приложения с отдельной systemd-cgroup
+  работают вне TUN.
+- **DNS-политика** — remote DoH/DoU, TUN DNS hijack и статус в UI.
 - **Быстрый выбор** — Fast HTTP ping, автопереключение с причиной,
   исключения серверов, фильтры, массовые действия, избранное и теги.
 - **История пинга** — sparkline, jitter и packet loss по каждому серверу;
@@ -72,7 +75,7 @@
 Скачай `.pkg.tar.zst` из [последнего релиза](https://github.com/nikitaakbaev/m3vpn/releases/latest):
 
 ```bash
-sudo pacman -U m3vpn-0.2.2-1-x86_64.pkg.tar.zst
+sudo pacman -U m3vpn-0.2.3-1-x86_64.pkg.tar.zst
 sudo systemctl enable --now m3vpn-helper
 sudo usermod -aG m3vpn "$USER"
 ```
@@ -82,7 +85,7 @@ sudo usermod -aG m3vpn "$USER"
 ### Debian / Ubuntu
 
 ```bash
-sudo apt install ./m3vpn_0.2.2-1_amd64.deb
+sudo apt install ./m3vpn_0.2.3-1_amd64.deb
 ```
 
 ### Portable
@@ -90,7 +93,7 @@ sudo apt install ./m3vpn_0.2.2-1_amd64.deb
 Portable-архив содержит готовое дерево `/usr`:
 
 ```bash
-sudo tar -xzf m3vpn-0.2.2-linux-x86_64.tar.gz -C /
+sudo tar -xzf m3vpn-0.2.3-linux-x86_64.tar.gz -C /
 sudo systemctl enable --now m3vpn-helper
 ```
 
@@ -182,9 +185,9 @@ bash scripts/package-arch.sh
 Результат в `dist/`:
 
 ```text
-m3vpn-0.2.2-1-x86_64.pkg.tar.zst
-m3vpn_0.2.2-1_amd64.deb
-m3vpn-0.2.2-linux-x86_64.tar.gz
+m3vpn-0.2.3-1-x86_64.pkg.tar.zst
+m3vpn_0.2.3-1_amd64.deb
+m3vpn-0.2.3-linux-x86_64.tar.gz
 SHA256SUMS
 ```
 

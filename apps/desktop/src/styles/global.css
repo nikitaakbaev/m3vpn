@@ -515,6 +515,31 @@ button {
   background: var(--m3-accent-ink);
 }
 
+.split-apps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.split-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--m3-border);
+  background: var(--md-sys-color-surface-container-lowest);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.split-app input {
+  accent-color: var(--m3-accent);
+}
+
 .m3-segmented {
   display: inline-flex;
   gap: 2px;
@@ -773,6 +798,35 @@ input[type="number"]::-webkit-inner-spin-button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.hero__mode-switch .split-apps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.split-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--m3-border);
+  background: var(--md-sys-color-surface-container-lowest);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.split-app input {
+  accent-color: var(--m3-accent);
+}
+
+.m3-segmented {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 7%, transparent);
 }
 
 .hero__mode {
@@ -2101,7 +2155,32 @@ input[type="number"]::-webkit-inner-spin-button {
     width: 100%;
   }
 
-  .m3-segmented {
+  .split-apps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.split-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--m3-border);
+  background: var(--md-sys-color-surface-container-lowest);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.split-app input {
+  accent-color: var(--m3-accent);
+}
+
+.m3-segmented {
     width: 100%;
   }
 
@@ -2334,7 +2413,32 @@ input[type="number"]::-webkit-inner-spin-button {
 /* ------------------------------------------------------- ping settings */
 
 .settings-segmented,
-.settings-segmented .m3-segmented {
+.settings-segmented .split-apps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.split-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--m3-border);
+  background: var(--md-sys-color-surface-container-lowest);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.split-app input {
+  accent-color: var(--m3-accent);
+}
+
+.m3-segmented {
   width: 100%;
 }
 

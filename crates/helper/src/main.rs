@@ -17,6 +17,7 @@ const FRONT_MARK: &str = "0x2022";
 const MARK_TABLE: &str = "m3vpn_mark";
 const TUN_TABLE: &str = "m3vpn_tun";
 const IPV6_TABLE: &str = "m3vpn_ipv6";
+const SPLIT_TABLE: &str = "m3vpn_split";
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -33,6 +34,8 @@ enum Request {
         proxy_pids: Vec<u32>,
         #[serde(default = "default_ipv6")]
         ipv6: bool,
+        #[serde(default)]
+        split_cgroups: Vec<String>,
     },
     StopTun,
     Status,
@@ -116,7 +119,7 @@ fn print_json(value: &Value) {
 
 fn print_help() {
     println!(
-        "m3vpn-helper run | status | stop | panic | restore | config | start-tun --app-pid N --socks-port N [--proxy-pid N ...] [--front-pid N] [--kill-switch] [--no-ipv6]"
+        "m3vpn-helper run | status | stop | panic | restore | config | start-tun --app-pid N --socks-port N [--proxy-pid N ...] [--front-pid N] [--kill-switch] [--no-ipv6] [--split-cgroup PATH]"
     );
 }
 
@@ -172,6 +175,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             dns,
             proxy_pids,
             ipv6,
+            split_cgroups,
         } => start_tun(
             &state,
             &run_dir,
@@ -182,6 +186,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             &dns,
             &proxy_pids,
             ipv6,
+            &split_cgroups,
         ),
         Request::StopTun => stop_tun(&state, &run_dir),
         Request::Status => {
@@ -215,6 +220,7 @@ fn start_tun(
     dns: &[Value],
     proxy_pids: &[u32],
     ipv6: bool,
+    split_cgroups: &[String],
 ) -> Result<Response> {
     {
         let session = state
@@ -246,6 +252,13 @@ fn start_tun(
     if let Err(error) = apply_tun_input_accept() {
         drop(bypass);
         remove_proxy_mark();
+        restore_network(run_dir);
+        return Err(error);
+    }
+    if let Err(error) = install_split_mark(split_cgroups) {
+        drop(bypass);
+        remove_proxy_mark();
+        remove_tun_input_accept();
         restore_network(run_dir);
         return Err(error);
     }
@@ -469,6 +482,7 @@ fn cleanup_tun_interface() {
     remove_proxy_mark();
     remove_tun_input_accept();
     remove_ipv6_block();
+    remove_split_mark();
     remove_front_bypass();
     for priority in 9000..=9010 {
         loop {
@@ -703,6 +717,71 @@ fn apply_ipv6_block() -> Result<()> {
 fn remove_ipv6_block() {
     let _ = Command::new("nft")
         .args(["delete", "table", "inet", IPV6_TABLE])
+        .output();
+}
+
+/// Per-app split tunneling: mark selected app cgroups with 0x2022 before
+/// auto_redirect runs. auto_redirect treats that as its output mark and leaves
+/// those packets on the main table.
+fn install_split_mark(cgroups: &[String]) -> Result<()> {
+    remove_split_mark();
+    if cgroups.is_empty() {
+        return Ok(());
+    }
+    let chain = "{ type route hook output priority -200; policy accept; }";
+    let table = ["add", "table", "inet", SPLIT_TABLE];
+    let chain_args = ["add", "chain", "inet", SPLIT_TABLE, "output", chain];
+    for args in [table.as_slice(), chain_args.as_slice()] {
+        let output = Command::new("nft").args(args).output().context("run nft")?;
+        if !output.status.success() {
+            remove_split_mark();
+            bail!(
+                "nft split table failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+    for cgroup in cgroups {
+        let path = cgroup.trim_matches('/');
+        if path.is_empty()
+            || !path.starts_with("user.slice/")
+            || path.split('/').any(|part| part == ".." || part.is_empty())
+        {
+            continue;
+        }
+        let level = path.split('/').count().to_string();
+        let quoted = format!("\"{path}\"");
+        let args = [
+            "add",
+            "rule",
+            "inet",
+            SPLIT_TABLE,
+            "output",
+            "socket",
+            "cgroupv2",
+            "level",
+            &level,
+            &quoted,
+            "meta",
+            "mark",
+            "set",
+            FRONT_MARK,
+        ];
+        let output = Command::new("nft").args(args).output().context("run nft")?;
+        if !output.status.success() {
+            // A stale app scope must not prevent TUN from starting.
+            eprintln!(
+                "m3vpn-helper: split cgroup {path} skipped: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+    Ok(())
+}
+
+fn remove_split_mark() {
+    let _ = Command::new("nft")
+        .args(["delete", "table", "inet", SPLIT_TABLE])
         .output();
 }
 
@@ -1066,6 +1145,7 @@ fn parse_start_args(args: &[String]) -> Value {
     let mut kill_switch = false;
     let mut ipv6 = true;
     let mut proxy_pids: Vec<u32> = Vec::new();
+    let mut split_cgroups: Vec<String> = Vec::new();
     let mut iter = args.iter().skip(2);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -1076,6 +1156,11 @@ fn parse_start_args(args: &[String]) -> Value {
             "--socks-port" => socks_port = iter.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             "--kill-switch" => kill_switch = true,
             "--no-ipv6" => ipv6 = false,
+            "--split-cgroup" => {
+                if let Some(cgroup) = iter.next() {
+                    split_cgroups.push(cgroup.clone());
+                }
+            }
             "--proxy-pid" => {
                 if let Some(pid) = iter.next().and_then(|v| v.parse().ok()) {
                     proxy_pids.push(pid);
@@ -1091,7 +1176,8 @@ fn parse_start_args(args: &[String]) -> Value {
         "socks_port": socks_port,
         "kill_switch": kill_switch,
         "proxy_pids": proxy_pids,
-        "ipv6": ipv6
+        "ipv6": ipv6,
+        "split_cgroups": split_cgroups
     })
 }
 

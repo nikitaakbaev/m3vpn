@@ -64,7 +64,8 @@ done
 
 ip -j route show table all | jq -S 'sort_by(.dst, .dev)' > "\$WORK/routes.before"
 ip rule show > "\$WORK/rules.before"
-"$HELPER" start-tun --app-pid \$\$ --front-pid \$FRONT_PID --proxy-pid \$FRONT_PID --socks-port 10808 >/dev/null
+SELF_CGROUP="\$(sed -n 's/^0:://p' /proc/self/cgroup)"
+"$HELPER" start-tun --app-pid \$\$ --front-pid \$FRONT_PID --proxy-pid \$FRONT_PID --split-cgroup "\$SELF_CGROUP" --socks-port 10808 >/dev/null
 
 if ! ip link show m3vpn0 >/dev/null 2>&1; then
   echo "TUN interface missing" >&2
@@ -81,6 +82,10 @@ if ! nft list table inet m3vpn_tun 2>/dev/null | grep -q 'iifname "m3vpn0" accep
   echo "TUN input accept rule is missing" >&2
   exit 1
 fi
+if ! nft list table inet m3vpn_split 2>/dev/null | grep -q 'meta mark set 0x00002022'; then
+  echo "split tunneling rule is missing" >&2
+  exit 1
+fi
 
 if ! timeout 10s "$HELPER" stop; then
   echo "helper stop failed" >&2
@@ -95,6 +100,10 @@ if ip link show m3vpn0 >/dev/null 2>&1; then
 fi
 if nft list table inet m3vpn_tun >/dev/null 2>&1; then
   echo "TUN input table remains after stop" >&2
+  exit 1
+fi
+if nft list table inet m3vpn_split >/dev/null 2>&1; then
+  echo "split table remains after stop" >&2
   exit 1
 fi
 

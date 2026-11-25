@@ -51,6 +51,11 @@ export interface Server {
   lossPercent: number;
 }
 
+export interface SplitApp {
+  label: string;
+  cgroup: string;
+}
+
 export interface TrafficStats {
   uploadTotal: number;
   downloadTotal: number;
@@ -200,6 +205,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "select.failures_to_failover": "2",
   "tun.kill_switch": "false",
   "tun.ipv6": "true",
+  "tun.split_apps": "[]",
   "tun.strict_route": "false",
   "proxy.system": "false",
   "proxy.port": "10808",
@@ -610,6 +616,22 @@ export async function refreshRoutingGeoIfDue(): Promise<GeoStatus | null> {
 export async function listProfiles(): Promise<Profile[]> {
   if (!isTauri) return [...mockProfiles];
   return invoke<Profile[]>("list_profiles");
+}
+
+export async function listSplitApps(): Promise<SplitApp[]> {
+  if (!isTauri) {
+    return [
+      {
+        label: "Firefox",
+        cgroup: "user.slice/user-1000.slice/user@1000.service/app.slice/app-org.mozilla.firefox@demo.service",
+      },
+      {
+        label: "Telegram",
+        cgroup: "user.slice/user-1000.slice/user@1000.service/app.slice/app-org.telegram.desktop@demo.service",
+      },
+    ];
+  }
+  return invoke<SplitApp[]>("list_split_apps");
 }
 
 export async function trafficStats(): Promise<TrafficStats> {

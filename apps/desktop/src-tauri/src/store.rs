@@ -29,6 +29,7 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("select.failures_to_failover", "2"),
     ("tun.kill_switch", "false"),
     ("tun.ipv6", "true"),
+    ("tun.split_apps", "[]"),
     ("tun.strict_route", "false"),
     ("proxy.system", "false"),
     ("proxy.port", "10808"),

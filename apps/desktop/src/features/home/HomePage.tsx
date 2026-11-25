@@ -2,6 +2,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
+import { Segmented } from "../../components/Segmented";
 import { useAppStore, useT } from "../../store/useAppStore";
 import { formatBytes, formatDate, formatUptime, parseUserinfo } from "../../lib/format";
 import type { Page } from "../../components/NavRail";
@@ -20,6 +21,8 @@ export function HomePage({ onNavigate }: HomePageProps) {
   const rtt = useAppStore((state) => state.rtt);
   const selectedServerId = useAppStore((state) => state.selectedServerId);
   const selectServer = useAppStore((state) => state.selectServer);
+  const appInfo = useAppStore((state) => state.info);
+  const set = useAppStore((state) => state.set);
   const connect = useAppStore((state) => state.connect);
   const disconnect = useAppStore((state) => state.disconnect);
   const busy = useAppStore((state) => state.busy);
@@ -28,11 +31,22 @@ export function HomePage({ onNavigate }: HomePageProps) {
   const port = status.socksPort || Number(settings["proxy.active_port"] ?? "10810") || 10810;
   const selected = servers.find((server) => server.id === selectedServerId) ?? null;
   const profile = profiles[0] ?? null;
-  const info = parseUserinfo(profile?.userinfo);
-  const used = (info.upload ?? 0) + (info.download ?? 0);
-  const total = info.total ?? 0;
+  const userinfo = parseUserinfo(profile?.userinfo);
+  const used = (userinfo.upload ?? 0) + (userinfo.download ?? 0);
+  const total = userinfo.total ?? 0;
   const percent = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
   const quick = servers.slice(0, 5);
+  const mode = settings["mode"] === "tun" ? "tun" : "proxy";
+  const helperAvailable = appInfo?.helperAvailable ?? false;
+
+  const changeMode = async (value: string) => {
+    const next = value === "tun" ? "tun" : "proxy";
+    if (next === mode) return;
+    const wasConnected = status.running;
+    if (wasConnected) await disconnect();
+    await set("mode", next);
+    if (wasConnected) await connect();
+  };
 
   return (
     <>
@@ -54,7 +68,22 @@ export function HomePage({ onNavigate }: HomePageProps) {
               <span className={`status-dot${status.running ? " is-on" : ""}`} />
               {status.running ? t("home.on") : t("home.off")}
             </span>
-            <span className="hero__mode">{status.tun ? "TUN" : "PROXY"}</span>
+            <div className="hero__mode-switch">
+              <Segmented
+                value={mode}
+                label={t("settings.mode")}
+                options={[
+                  { value: "proxy", label: t("home.proxy"), icon: "public", disabled: busy },
+                  {
+                    value: "tun",
+                    label: t("home.tun"),
+                    icon: "shield",
+                    disabled: !helperAvailable || busy,
+                  },
+                ]}
+                onChange={(value) => void changeMode(value)}
+              />
+            </div>
           </div>
 
           <div className="hero__body">
@@ -129,7 +158,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
               <>
                 <div className="summary-card__number">{formatBytes(used)}</div>
                 <p className="muted">
-                  {t("home.of")} {formatBytes(total)} · {t("home.until")} {formatDate(info.expire)}
+                  {t("home.of")} {formatBytes(total)} · {t("home.until")} {formatDate(userinfo.expire)}
                 </p>
                 <div className="progress">
                   <span style={{ width: `${percent}%` }} />

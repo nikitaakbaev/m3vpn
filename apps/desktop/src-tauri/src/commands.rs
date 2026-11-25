@@ -208,6 +208,98 @@ pub async fn refresh_profile(app: AppHandle, profile_id: String) -> Result<Impor
     .map_err(|error| error.to_string())?
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitApp {
+    pub label: String,
+    pub cgroup: String,
+}
+
+#[tauri::command]
+pub fn list_split_apps() -> Vec<SplitApp> {
+    let Ok(cgroups) = std::fs::read_to_string("/proc/self/cgroup") else {
+        return Vec::new();
+    };
+    let Some(path) = cgroups.lines().find_map(|line| line.strip_prefix("0::")) else {
+        return Vec::new();
+    };
+    let Some(index) = path.find("/app.slice/") else {
+        return Vec::new();
+    };
+    let base = &path[..index + "/app.slice".len()];
+    let root = std::path::Path::new("/sys/fs/cgroup").join(base.trim_start_matches('/'));
+    let mut apps = Vec::new();
+    scan_split_apps(&root, base.trim_start_matches('/'), 0, &mut apps);
+    apps.sort_by(|left, right| left.label.cmp(&right.label));
+    apps.dedup_by(|left, right| left.cgroup == right.cgroup);
+    apps.truncate(100);
+    apps
+}
+
+fn scan_split_apps(root: &std::path::Path, relative: &str, depth: usize, apps: &mut Vec<SplitApp>) {
+    if depth > 4 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if !metadata.is_dir() {
+            continue;
+        }
+        let child = root.join(&name);
+        let child_relative = format!("{relative}/{name}");
+        if name.ends_with(".slice") {
+            scan_split_apps(&child, &child_relative, depth + 1, apps);
+            continue;
+        }
+        if !(name.starts_with("app-") || name.ends_with(".scope") || name.ends_with(".service")) {
+            continue;
+        }
+        let procs = child.join("cgroup.procs");
+        let running = std::fs::read_to_string(&procs)
+            .map(|pids| !pids.trim().is_empty())
+            .unwrap_or(false);
+        if !running {
+            continue;
+        }
+        let label = split_app_label(&name);
+        let lower = label.to_ascii_lowercase();
+        if lower.contains("m3vpn") || lower.contains("incy") || lower.contains("ingy") {
+            continue;
+        }
+        apps.push(SplitApp {
+            label,
+            cgroup: child_relative,
+        });
+    }
+}
+
+fn split_app_label(name: &str) -> String {
+    let mut label = name.strip_prefix("app-").unwrap_or(name);
+    if let Some((head, _)) = label.split_once('@') {
+        label = head;
+    }
+    for suffix in [".service", ".scope"] {
+        if let Some(head) = label.strip_suffix(suffix) {
+            label = head;
+        }
+    }
+    if let Some((head, tail)) = label.rsplit_once('-') {
+        if !tail.is_empty() && tail.chars().all(|ch| ch.is_ascii_digit()) {
+            label = head;
+        }
+    }
+    label.to_string()
+}
+
 #[tauri::command]
 pub async fn download_update_artifact(
     app: AppHandle,
@@ -368,6 +460,13 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
             let front_pid = core::front_pid(&state.core);
             let kill_switch = state.setting_bool("tun.kill_switch", false);
             let ipv6 = state.setting_bool("tun.ipv6", true);
+            let split_cgroups: Vec<String> = state
+                .setting("tun.split_apps")
+                .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|path: &String| std::path::Path::new("/sys/fs/cgroup").join(path).exists())
+                .collect();
             let mut proxy_pids = Vec::new();
             if let Some(pid) = front_pid {
                 proxy_pids.push(pid);
@@ -383,6 +482,7 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
                 &tun_dns,
                 &proxy_pids,
                 ipv6,
+                &split_cgroups,
             ) {
                 core::disconnect(&state.core, &state.paths);
                 return Err(format!("TUN helper: {error:#}"));

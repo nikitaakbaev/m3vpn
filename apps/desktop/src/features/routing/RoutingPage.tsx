@@ -35,6 +35,19 @@ export function RoutingPage() {
   }, [loadRouting]);
 
   const active = profiles.find((profile) => profile.active) ?? null;
+  const profileData = (() => {
+    if (!active) return null;
+    try {
+      return JSON.parse(active.profileJson) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  })();
+  const remoteDns =
+    (profileData?.RemoteDNSDomain as string | undefined) ??
+    (profileData?.RemoteDNSIP as string | undefined) ??
+    "—";
+  const remoteDnsType = (profileData?.RemoteDNSType as string | undefined) ?? "DoH";
   const geoHours = Number(settings["routing.geo_update_hours"] ?? "24");
   const configuredGeoSource = settings["routing.geo_source"];
   const geoSource =
@@ -126,6 +139,14 @@ export function RoutingPage() {
               ))}
             </div>
           )}
+          {active ? (
+            <div className="rule-set-chips" aria-label={t("routing.dnsPolicy")}>
+              <span className="rule-set-chips__label">{t("routing.dnsPolicy")}</span>
+              <span className="chip">{remoteDnsType}</span>
+              <span className="chip" title={remoteDns}>{remoteDns}</span>
+              <span className="chip chip--success">{t("routing.dnsHijack")}</span>
+            </div>
+          ) : null}
         </div>
         <div className="geo-controls">
           <label className="geo-controls__interval">

@@ -73,7 +73,7 @@ auto_redirect (TPROXY), front/backend обходят TUN по app-cgroup mark, U
 
 Оценка: **2–3 дня**.
 
-Статус: **P2 закрыт**. Готовы массовый выбор, фильтры, поиск по ядру,
+Статус: **P2 закрыт**; переключатель Proxy/TUN перенесён на главный экран. Готовы массовый выбор, фильтры, поиск по ядру,
 причина автопереключения, теги, избранное, история пинга (sparkline), jitter,
 packet loss и traffic-aware auto-switch через Clash API front-прокси.
 
@@ -91,9 +91,9 @@ packet loss и traffic-aware auto-switch через Clash API front-прокси
 
 Оценка: **3–5 дней**.
 
-Статус: sing-box geo rule-sets с локальным кэшем, TUN DNS из профиля,
-geo-источники Global/Россия/Авто, список rule-sets в UI и IPv6-политика
-готовы. Остались split tunneling, FakeDNS Xray и UI-проверка DNS-утечек.
+Статус: **P3 закрыт** — sing-box geo rule-sets, TUN DNS, geo-источники,
+IPv6-политика, FakeDNS Xray, split tunneling по systemd-cgroup и DNS-политика
+в UI. Внешний DNS leak-test не добавлялся.
 
 ## P4 — упаковка и обновления
 
