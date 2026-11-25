@@ -693,7 +693,7 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
                 "server": "127.0.0.1",
                 "server_port": socks_port
             },
-            { "type": "direct", "tag": "direct" }
+            { "type": "direct", "tag": "direct", "routing_mark": 0x2022 }
         ],
         "route": {
             "rules": [
@@ -717,8 +717,7 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
                     "outbound": "proxy"
                 }
             ],
-            "final": "proxy",
-            "default_mark": 0x2022
+            "final": "proxy"
         }
     })
 }
@@ -984,7 +983,8 @@ mod tests {
         assert_eq!(config["outbounds"][0]["type"], "socks");
         assert_eq!(config["outbounds"][0]["server_port"], 10808);
         assert_eq!(config["route"]["final"], "proxy");
-        assert_eq!(config["route"]["default_mark"], 0x2022);
+        assert_eq!(config["outbounds"][1]["routing_mark"], 0x2022);
+        assert!(config["route"].get("default_mark").is_none());
         assert_eq!(config["dns"]["final"], "dns-bootstrap");
         assert_eq!(config["dns"]["servers"][0]["type"], "https");
         assert_eq!(config["route"]["rules"][2]["ip_cidr"][0], "10.0.0.0/8");
