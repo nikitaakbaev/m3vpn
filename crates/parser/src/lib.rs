@@ -206,7 +206,7 @@ fn parse_item(item: &Value, result: &mut ParseResult) {
 fn full_config_server(item: &Value) -> Option<ParsedServer> {
     let outbounds = item.get("outbounds")?.as_array()?;
 
-    // Hysteria configs from INCY use Xray-shaped outbounds, but Xray cannot
+    // Provider Hysteria configs use Xray-shaped outbounds, but Xray cannot
     // run Hysteria 2. Convert the whole config for hiddify-sing-box instead.
     if outbounds
         .iter()

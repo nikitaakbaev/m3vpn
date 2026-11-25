@@ -1,22 +1,22 @@
-# M9 — INGY Ping, палитра и упаковка
+# M9 — Fast HTTP Ping, палитра и упаковка
 
 Дата: 2026-11-24
 Статус: готово; Arch-пакет и portable-архив собраны и проверены
 
-## Пинг как в INCY
+## Fast HTTP Ping
 
-Добавлены четыре режима из INCY:
+Добавлены четыре режима пинга:
 
 | Режим | Что делает |
 |---|---|
-| **INGY Ping** | реальный HTTP GET через сам прокси; результат делится на **3.3** |
+| **Fast HTTP** | реальный HTTP GET через сам прокси; результат делится на **3.3** |
 | **TCP** | TCP-соединение с адресом сервера |
 | **HTTP GET** | HTTP GET через прокси, без деления |
 | **HTTP HEAD** | HTTP HEAD через прокси, без деления |
 
-Формула INGY взята из документации INCY: «real HTTP GET through the
-proxy, but the value is divided by ~3.3 so it reads like a familiar ping».
-Для каждого сервера временно поднимается его ядро на отдельном порту,
+Fast HTTP делает реальный HTTP GET через прокси и делит результат на 3.3,
+чтобы значение читалось как обычный пинг. Для каждого сервера временно
+поднимается его ядро на отдельном порту,
 запрос идёт через SOCKS этого ядра, после замера процесс останавливается.
 
 Дополнительно:
@@ -24,7 +24,7 @@ proxy, but the value is divided by ~3.3 so it reads like a familiar ping».
 - тестовый URL и пресеты **Google 204 / Cloudflare / Apple**;
 - тайм-аут 1–10 секунд со степпером;
 - отображение пинга: **Цифры / Шкала / Оба / Точки**;
-- INGY Ping включён по умолчанию;
+- Fast HTTP включён по умолчанию;
 - в списке серверов подпись меняется на выбранный режим.
 
 Проверка на реальной подписке:
@@ -35,7 +35,7 @@ elapsed: 18 s
 Hysteria 2: 14 из 15 responded
 ```
 
-INGY-значения выглядят как обычный пинг: 129–543 мс для дальних серверов,
+Fast HTTP-значения выглядят как обычный пинг: 129–543 мс для дальних серверов,
 а не полный HTTP round-trip. TCP-режим остался быстрым и не запускает ядра.
 
 ## Палитра
@@ -56,32 +56,30 @@ INGY-значения выглядят как обычный пинг: 129–543
   `#7A4E8C` → `#7C3AED`;
 - фиолетовая тема теперь использует белый текст, зелёная — тёмный.
 
-## Обновления с личного сервера
+## Обновления через GitHub Releases
 
-Добавлен безопасный механизм обновлений без автоустановки:
+Выбран GitHub Releases вместо личного сервера:
 
-- приложение читает `latest.json` по HTTPS;
-- показывает версию, заметки и ссылки на артефакты;
-- требует корректный SHA-256 для каждого артефакта в манифесте;
-- открывает пакет в браузере, но **не запускает установщик сам**;
+- приложение читает последний публичный релиз через GitHub API;
+- показывает версию, заметки и ссылки на Arch-пакет/portable-архив;
+- GitHub отдаёт SHA-256 digest для каждого asset;
+- приложение не устанавливает пакеты автоматически;
 - auto-check раз в 6 часов и при запуске.
 
-Настройка в приложении: **Настройки → Обновления → Сервер обновлений**.
-Можно указать URL до `latest.json` или до папки с ним.
+Настройка: **Настройки → Обновления → GitHub-репозиторий**, формат
+`owner/repo`.
 
 Публикация:
 
 ```bash
-M3VPN_UPDATE_URL="https://updates.example.com/m3vpn" \
-M3VPN_UPDATE_HOST="user@updates.example.com" \
-M3VPN_UPDATE_PATH="/var/www/updates/m3vpn" \
-M3VPN_UPDATE_NOTES="TUN fixes" \
-bash scripts/publish-update.sh
+GITHUB_REPO="owner/m3vpn" \
+GITHUB_TOKEN="github_pat_..." \
+M3VPN_RELEASE_NOTES="TUN fixes" \
+bash scripts/publish-github.sh
 ```
 
-Скрипт собирает пакеты, создаёт `dist/update/latest.json`, `sha256sums.txt`
-и заливает через `rsync`. Пример nginx и схема сервера —
-в [`packaging/update/README.md`](../packaging/update/README.md).
+Скрипт создаёт тег `v<version>` и загружает Arch-пакет и portable-архив.
+Подробнее: [`packaging/github/README.md`](../packaging/github/README.md).
 
 ## Гео-карточка
 
@@ -94,7 +92,7 @@ bash scripts/publish-update.sh
 Установлен безопасный skill **blazing-rust** (MIT, только markdown, без
 исполняемых скриптов): `~/.config/opencode/skills/blazing-rust`.
 
-Замер INGY Ping на 58 серверах, release-сборка:
+Замер Fast HTTP Ping на 58 серверах, release-сборка:
 
 | Параллельность | Прогоны | Медиана |
 |---|---:|---:|
@@ -149,10 +147,10 @@ sudo usermod -aG m3vpn "$USER"   # затем перелогиниться
 
 | Проверка | Результат |
 |---|---|
-| INGY Ping на реальной подписке | 46/58 responded, 18 с |
-| Hysteria 2 через INGY Ping | 14/15 |
-| INGY/HTTP GET/HTTP HEAD на локальном прокси | OK |
-| App tests | 24/24 + 8 ignored |
+| Fast HTTP Ping на реальной подписке | 46/58 responded, 18 с |
+| Hysteria 2 через Fast HTTP Ping | 14/15 |
+| Fast HTTP / HTTP GET / HTTP HEAD на локальном прокси | OK |
+| App tests | 23/23 + 8 ignored |
 | Parser tests | 18/18 |
 | Helper tests | 2/2 |
 | `cargo clippy -D warnings` | OK |
@@ -161,12 +159,12 @@ sudo usermod -aG m3vpn "$USER"   # затем перелогиниться
 | Arch package build | OK |
 | Portable tarball | OK |
 | desktop / AppStream validation | OK |
-| Update manifest + local HTTP test | OK |
-| INGY Ping concurrency 4 → 8 | 21.0 → 10.2 с (медиана) |
+| GitHub release parser + digest test | OK |
+| Fast HTTP Ping concurrency 4 → 8 | 21.0 → 10.2 с (медиана) |
 
 ## Ограничения
 
-- **INGY Ping медленнее TCP**: для каждого сервера поднимается временное
+- **Fast HTTP Ping медленнее TCP**: для каждого сервера поднимается временное
   ядро. На 58 серверах это около 18 секунд при 4 параллельных проверках.
 - Некоторые серверы не отвечают на выбранный тестовый URL; это нормально
   и показывается как `—`.
@@ -183,6 +181,6 @@ sudo usermod -aG m3vpn "$USER"   # затем перелогиниться
 
 1. `.deb`/`.rpm`/AppImage в CI.
 2. QR-коды для share-ссылок.
-3. Deep links `m3vpn://` / `incy://`.
+3. Deep links `m3vpn://`.
 4. Автоустановка обновлений (сейчас только проверка и ссылки).
 5. Smoke на чистом Arch/Ubuntu.

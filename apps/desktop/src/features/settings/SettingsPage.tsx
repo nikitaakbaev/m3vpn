@@ -46,10 +46,10 @@ export function SettingsPage() {
     Number(settings["select.tolerance_ratio"] ?? "0.3") * 100,
   );
   const autoWins = Number(settings["select.wins_required"] ?? "2");
-  const updateUrl = settings["update.url"] ?? "";
+  const updateRepo = settings["update.github_repo"] ?? "";
   const updateAutocheck = settings["update.autocheck"] !== "false";
   const currentVersion = info?.version ?? "0.1.0";
-  const pingProtocol = settings["ping.protocol"] ?? "incy";
+  const pingProtocol = settings["ping.protocol"] ?? "fast_http";
   const pingDisplay = settings["ping.display"] ?? "both";
   const pingUrl = settings["ping.url"] ?? "https://www.gstatic.com/generate_204";
   const pingTimeoutSec = Math.max(
@@ -59,8 +59,8 @@ export function SettingsPage() {
   const pingHintKey =
     pingProtocol === "tcp"
       ? "settings.pingTcpHint"
-      : pingProtocol === "incy"
-        ? "settings.pingIncyHint"
+      : pingProtocol === "fast_http"
+        ? "settings.pingFastHttpHint"
         : "settings.pingProxyHint";
 
   const changePingTimeout = (delta: number) => {
@@ -255,7 +255,7 @@ export function SettingsPage() {
                 value={pingProtocol}
                 label={t("settings.pingProtocol")}
                 options={[
-                  { value: "incy", label: t("settings.pingIncy") },
+                  { value: "fast_http", label: t("settings.pingFastHttp") },
                   { value: "tcp", label: t("settings.pingTcp") },
                   { value: "proxy_get", label: t("settings.pingGet") },
                   { value: "proxy_head", label: t("settings.pingHead") },
@@ -351,7 +351,7 @@ export function SettingsPage() {
           <div className="settings-row">
             <div className="settings-row__text">
               <strong>{t("settings.concurrency")}</strong>
-              <span>1–32 · HTTP до 8</span>
+              <span>{t("settings.concurrencyHint")}</span>
             </div>
             <input
               className="m3-input m3-input--short"
@@ -359,7 +359,7 @@ export function SettingsPage() {
               aria-label={t("settings.concurrency")}
               min={1}
               max={32}
-              value={settings["ping.concurrency"] ?? "4"}
+              value={settings["ping.concurrency"] ?? "8"}
               onChange={(event) => saveNumber("ping.concurrency", event.target.value, 1, 32)}
             />
           </div>
@@ -459,16 +459,16 @@ export function SettingsPage() {
 
           <div className="settings-row settings-row--column">
             <div className="settings-row__text">
-              <strong>{t("settings.updateUrl")}</strong>
-              <span>{t("settings.updateUrlHint")}</span>
+              <strong>{t("settings.updateRepo")}</strong>
+              <span>{t("settings.updateRepoHint")}</span>
             </div>
             <input
               className="m3-input"
-              type="url"
-              value={updateUrl}
-              placeholder="https://updates.example.com/m3vpn/latest.json"
-              onChange={(event) => void set("update.url", event.target.value)}
-              onBlur={(event) => void set("update.url", event.target.value.trim())}
+              type="text"
+              value={updateRepo}
+              placeholder="owner/m3vpn"
+              onChange={(event) => void set("update.github_repo", event.target.value)}
+              onBlur={(event) => void set("update.github_repo", event.target.value.trim())}
             />
           </div>
 
@@ -490,13 +490,13 @@ export function SettingsPage() {
               <span>
                 {updateInfo?.latestVersion
                   ? `${t("settings.updateLatest")}: ${updateInfo.latestVersion}`
-                  : t("settings.updateNotConfigured")}
+                  : t("settings.updateRepoMissing")}
               </span>
             </div>
             <Button
               variant="tonal"
               icon={updateBusy ? "progress_activity" : "sync"}
-              disabled={updateBusy || !updateUrl.trim()}
+              disabled={updateBusy || !updateRepo.trim()}
               onClick={() => void checkUpdates()}
             >
               {updateBusy ? t("settings.updateChecking") : t("settings.updateCheck")}
@@ -533,14 +533,23 @@ export function SettingsPage() {
                 </div>
               </div>
               {updateInfo.notes ? <p>{updateInfo.notes}</p> : null}
-              {updateInfo.artifacts.length > 0 ? (
+              {updateInfo.artifacts.length > 0 || updateInfo.releaseUrl ? (
                 <div className="update-artifacts">
+                  {updateInfo.releaseUrl ? (
+                    <Button
+                      variant="text"
+                      icon="open_in_new"
+                      onClick={() => void openUpdateArtifact(updateInfo.releaseUrl ?? "")}
+                    >
+                      {t("settings.updateOpenRelease")}
+                    </Button>
+                  ) : null}
                   {updateInfo.artifacts.map((artifact) => (
                     <Button
                       key={artifact.kind}
                       variant="outlined"
                       icon="download"
-                      title={`sha256: ${artifact.sha256}`}
+                      title={`sha256: ${artifact.sha256} · ${artifact.size} B`}
                       onClick={() => void openUpdateArtifact(artifact.url)}
                     >
                       {artifact.kind === "arch"

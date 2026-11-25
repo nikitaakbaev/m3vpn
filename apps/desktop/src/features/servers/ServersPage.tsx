@@ -76,7 +76,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
     return [...map.entries()];
   }, [ordered]);
 
-  const pingMode = settings["ping.protocol"] ?? "incy";
+  const pingMode = settings["ping.protocol"] ?? "fast_http";
   const pingDisplay = settings["ping.display"] ?? "both";
   const pingLabelKey =
     pingMode === "tcp"
@@ -85,7 +85,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         ? "servers.pingGet"
         : pingMode === "proxy_head"
           ? "servers.pingHead"
-          : "servers.pingIncy";
+          : "servers.pingFastHttp";
 
   const renderLatency = (server: Server) => {
     const ms = server.latencyMs;

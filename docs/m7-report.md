@@ -5,12 +5,12 @@
 
 ## Что добавлено
 
-- Экран **Маршруты** с импортом профилей INCY.
+- Экран **Маршруты** с импортом профилей провайдера.
 - Поддержка форматов:
   - JSON профиля;
   - URL на JSON;
   - base64 и URL-safe base64;
-  - deep link `incy://routing/onadd/<payload>`.
+  - deep link `m3vpn://routing/onadd/<payload>`.
 - Применение профиля к **Xray-конфигам** и к **AmneziaWG (sing-box)**.
 - Правила `direct`, `proxy`, `block` по доменам и IP.
 - `GlobalProxy=false` переводит необработанный трафик в `direct`.
@@ -54,7 +54,7 @@ hot-switch, fail-open и direct-режим продолжают работать
 ## Совместимость geo-тегов
 
 В bundled `geosite.dat` (Loyalsoldier) нет записи `RU`, есть `CATEGORY-RU`.
-INCY-профили часто используют `geosite:ru`, и Xray отказывался стартовать с
+Профили провайдера часто используют `geosite:ru`, и Xray отказывался стартовать с
 `illegal domain rule: geosite:ru`. Профиль нормализует `geosite:ru` →
 `geosite:category-ru`.
 

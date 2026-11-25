@@ -231,7 +231,7 @@ pub fn cli_probe() -> anyhow::Result<(usize, usize)> {
     paths.ensure()?;
     let conn = store::open(&paths.db_path)?;
     let mode = ping::PingMode::from_setting(
-        &store::get(&conn, "ping.protocol")?.unwrap_or_else(|| "incy".to_string()),
+        &store::get(&conn, "ping.protocol")?.unwrap_or_else(|| "fast_http".to_string()),
     );
     let test_url = store::get(&conn, "ping.url")?.unwrap_or_default();
     let timeout = store::get(&conn, "ping.timeout_ms")?

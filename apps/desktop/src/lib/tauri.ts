@@ -83,7 +83,7 @@ export interface UpdateInfo {
   notes: string | null;
   publishedAt: string | null;
   artifacts: UpdateArtifact[];
-  checkedAt: number;
+  releaseUrl: string | null;
 }
 
 export interface LatencyResult {
@@ -150,7 +150,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "ping.enabled": "true",
   "ping.interval_sec": "60",
   "ping.url": "https://www.gstatic.com/generate_204",
-  "ping.protocol": "incy",
+  "ping.protocol": "fast_http",
   "ping.display": "both",
   "ping.timeout_ms": "3000",
   "ping.concurrency": "8",
@@ -367,20 +367,20 @@ export async function importConfig(text: string, name?: string): Promise<ImportS
   return invoke<ImportSummary>("import_config", { text, name: name ?? null });
 }
 
-export async function checkUpdate(url?: string): Promise<UpdateInfo> {
+export async function checkUpdate(repo?: string): Promise<UpdateInfo> {
   if (!isTauri) {
     return {
-      configured: Boolean(url?.trim()),
+      configured: Boolean(repo?.trim()),
       currentVersion: "0.1.0",
       latestVersion: "0.1.0",
       available: false,
       notes: null,
       publishedAt: null,
       artifacts: [],
-      checkedAt: now,
+      releaseUrl: null,
     };
   }
-  return invoke<UpdateInfo>("check_update", { url: url ?? null });
+  return invoke<UpdateInfo>("check_update", { repo: repo ?? null });
 }
 
 export async function openExternal(url: string): Promise<void> {
@@ -504,8 +504,8 @@ export async function refreshProfile(profileId: string): Promise<ImportSummary> 
 
 export async function probeServers(
   timeoutMs = 3000,
-  concurrency = 4,
-  mode = "incy",
+  concurrency = 8,
+  mode = "fast_http",
   testUrl = "https://www.gstatic.com/generate_204",
 ): Promise<LatencyResult[]> {
   if (!isTauri) {

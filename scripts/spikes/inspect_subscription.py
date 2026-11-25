@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect an INCY-compatible subscription body and print a sanitized summary."""
+"""Inspect a provider subscription body and print a sanitized summary."""
 import base64
 import json
 import sys

@@ -536,7 +536,7 @@ fn rule(sites: Vec<String>, ips: Vec<String>, target: Target) -> Option<Value> {
 }
 
 // Loyalsoldier's geosite.dat has no `RU` entry: Russian rules live under
-// `CATEGORY-RU`. INCY profiles commonly use `geosite:ru`, which Xray rejects
+// `CATEGORY-RU`. Provider profiles commonly use `geosite:ru`, which Xray rejects
 // at config load time, so map the shorthand to the bundled category.
 fn normalize_site(site: String) -> String {
     if site.eq_ignore_ascii_case("geosite:ru") {
@@ -909,7 +909,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_incy_profile_and_applies_xray_rules() {
+    fn parses_provider_profile_and_applies_xray_rules() {
         let value = json!({
             "Name": "RU",
             "GlobalProxy": "true",
@@ -1037,7 +1037,7 @@ mod tests {
     fn parses_deep_link() {
         let raw = json!({ "Name": "Deep", "GlobalProxy": false });
         let encoded = URL_SAFE_NO_PAD.encode(raw.to_string());
-        let (profile, _, _) = parse_profile(&format!("incy://routing/onadd/{encoded}")).unwrap();
+        let (profile, _, _) = parse_profile(&format!("m3vpn://routing/onadd/{encoded}")).unwrap();
         assert_eq!(profile.name, "Deep");
         assert!(!profile.global_proxy);
     }

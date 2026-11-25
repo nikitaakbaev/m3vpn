@@ -14,11 +14,11 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_TEST_URL: &str = "https://www.gstatic.com/generate_204";
-const INCY_SCALE: f64 = 3.3;
+const FAST_HTTP_SCALE: f64 = 3.3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PingMode {
-    Incy,
+    FastHttp,
     Tcp,
     ProxyGet,
     ProxyHead,
@@ -30,7 +30,7 @@ impl PingMode {
             "tcp" => Self::Tcp,
             "proxy_get" => Self::ProxyGet,
             "proxy_head" => Self::ProxyHead,
-            _ => Self::Incy,
+            _ => Self::FastHttp,
         }
     }
 
@@ -214,8 +214,8 @@ fn probe_proxy(
 
     match http {
         Ok(latency) => {
-            let latency = if options.mode == PingMode::Incy {
-                ((latency as f64) / INCY_SCALE).round().max(1.0) as u64
+            let latency = if options.mode == PingMode::FastHttp {
+                ((latency as f64) / FAST_HTTP_SCALE).round().max(1.0) as u64
             } else {
                 latency
             };
@@ -467,13 +467,13 @@ mod tests {
     }
 
     #[test]
-    fn incy_scale_reads_like_a_familiar_ping() {
-        assert_eq!((330.0 / INCY_SCALE).round(), 100.0);
+    fn fast_http_scale_reads_like_a_familiar_ping() {
+        assert_eq!((330.0 / FAST_HTTP_SCALE).round(), 100.0);
     }
 
     #[test]
     #[ignore = "requires sidecars"]
-    fn incy_ping_makes_an_http_request_through_the_backend() {
+    fn fast_http_ping_makes_an_http_request_through_the_backend() {
         use std::io::{Read, Write};
 
         let origin = TcpListener::bind("127.0.0.1:0").expect("bind origin");
@@ -489,7 +489,7 @@ mod tests {
             }
         });
 
-        let root = std::env::temp_dir().join(format!("m3vpn-incy-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("m3vpn-fast-http-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("logs")).unwrap();
         std::fs::create_dir_all(root.join("core")).unwrap();
@@ -543,7 +543,7 @@ mod tests {
         store::save_import(&conn, &profile, &[server]).expect("save import");
         let db = Mutex::new(conn);
         let sidecars = Sidecars::discover().expect("sidecars");
-        for mode in [PingMode::Incy, PingMode::ProxyGet, PingMode::ProxyHead] {
+        for mode in [PingMode::FastHttp, PingMode::ProxyGet, PingMode::ProxyHead] {
             let options =
                 PingOptions::new(mode, &format!("http://127.0.0.1:{origin_port}/"), 3000, 1);
             let results = probe_all(&db, &options, Some(&paths), Some(&sidecars)).expect("probe");

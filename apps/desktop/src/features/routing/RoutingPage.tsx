@@ -232,7 +232,7 @@ export function RoutingPage() {
           <span className="chip">DoH / DoU</span>
           <span className="chip">FakeDNS (sing-box)</span>
           <span className="chip">DomainStrategy</span>
-          <span className="chip">incy://routing</span>
+          <span className="chip">m3vpn://routing</span>
         </div>
       </Card>
 

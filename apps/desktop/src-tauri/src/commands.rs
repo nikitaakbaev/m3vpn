@@ -315,7 +315,7 @@ pub async fn probe_servers(
 ) -> Result<Vec<LatencyResult>, String> {
     let timeout = timeout_ms.unwrap_or(3000);
     let concurrency = concurrency.unwrap_or(4) as usize;
-    let mode = PingMode::from_setting(mode.as_deref().unwrap_or("incy"));
+    let mode = PingMode::from_setting(mode.as_deref().unwrap_or("fast_http"));
     let options = PingOptions::new(mode, &test_url.unwrap_or_default(), timeout, concurrency);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -558,18 +558,18 @@ fn now_secs() -> i64 {
 }
 
 #[tauri::command]
-pub async fn check_update(app: AppHandle, url: Option<String>) -> Result<UpdateInfo, String> {
+pub async fn check_update(app: AppHandle, repo: Option<String>) -> Result<UpdateInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let configured = url
+        let configured = repo
             .filter(|value| !value.trim().is_empty())
-            .or_else(|| state.setting("update.url"))
+            .or_else(|| state.setting("update.github_repo"))
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        let Some(url) = configured else {
+        let Some(repo) = configured else {
             return Ok(update::empty_info());
         };
-        update::check(&url).map_err(|error| format!("{error:#}"))
+        update::check(&repo).map_err(|error| format!("{error:#}"))
     })
     .await
     .map_err(|error| error.to_string())?

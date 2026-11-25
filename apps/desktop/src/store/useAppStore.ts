@@ -68,6 +68,21 @@ interface AppStore {
   clearError: () => void;
 }
 
+function sameStatus(left: api.ConnectionStatus, right: api.ConnectionStatus): boolean {
+  return (
+    left.running === right.running &&
+    left.serverId === right.serverId &&
+    left.serverName === right.serverName &&
+    left.socksPort === right.socksPort &&
+    left.httpPort === right.httpPort &&
+    left.pid === right.pid &&
+    left.startedAt === right.startedAt &&
+    left.engine === right.engine &&
+    left.tun === right.tun &&
+    left.error === right.error
+  );
+}
+
 export const useAppStore = create<AppStore>((set, get) => ({
   settings: { ...api.DEFAULT_SETTINGS },
   info: null,
@@ -139,7 +154,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   pollStatus: async () => {
     try {
       const status = await api.connectionStatus();
-      set({ status });
+      if (!sameStatus(get().status, status)) {
+        set({ status });
+      }
       if (!status.running && get().rtt !== null) {
         set({ rtt: null });
       }
@@ -159,6 +176,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       settings: { ...state.settings, [key]: value },
       ...(key === "select.mode" ? { autoCandidateId: null, autoCandidateWins: 0 } : {}),
+      ...(key === "update.github_repo" ? { updateInfo: null, updateError: null } : {}),
     }));
     try {
       await api.setSetting(key, value);
@@ -301,11 +319,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const settings = get().settings;
       const timeout = Number(settings["ping.timeout_ms"] ?? "3000");
-      const concurrency = Number(settings["ping.concurrency"] ?? "4");
+      const concurrency = Number(settings["ping.concurrency"] ?? "8");
       const results = await api.probeServers(
         Number.isFinite(timeout) ? timeout : 3000,
-        Number.isFinite(concurrency) ? concurrency : 4,
-        settings["ping.protocol"] ?? "incy",
+        Number.isFinite(concurrency) ? concurrency : 8,
+        settings["ping.protocol"] ?? "fast_http",
         settings["ping.url"] ?? "https://www.gstatic.com/generate_204",
       );
       await get().refreshData();
@@ -519,15 +537,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   checkUpdates: async (silent = false) => {
     if (silent && get().settings["update.autocheck"] === "false") return;
-    const url = (get().settings["update.url"] ?? "").trim();
-    if (!url) {
+    const repo = (get().settings["update.github_repo"] ?? "").trim();
+    if (!repo) {
       set({ updateInfo: null, updateError: null });
       return;
     }
     if (get().updateBusy) return;
     set({ updateBusy: true, updateError: null });
     try {
-      const info = await api.checkUpdate(url);
+      const info = await api.checkUpdate(repo);
       set({ updateInfo: info });
       if (info.available) {
         get().notify(
