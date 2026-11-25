@@ -21,22 +21,21 @@ front → remote → TUN → front → remote → ...
 
 Исправление:
 
-- helper создаёт cgroup v2 `/sys/fs/cgroup/m3vpn-proxy`;
-- app запускает front/backend через `m3vpn-helper launch -- <core>`;
-- launcher просит helper добавить свой PID в cgroup **до exec**, поэтому все
-  сокеты ядра создаются уже в нужной cgroup;
+- helper читает cgroup приложения из `/proc/<app_pid>/cgroup`;
+- front и backend — дочерние процессы app, поэтому уже находятся в этой
+  cgroup, отдельный launcher не нужен;
 - helper ставит nft-правило
-  `socket cgroupv2 level 1 "m3vpn-proxy" meta mark set 0x2022` в цепочке
-  `type route hook output priority -150`;
+  `socket cgroupv2 level N "<полный путь app-подгруппы>" meta mark set 0x2022`
+  в цепочке `type route hook output priority -150`;
 - helper добавляет `ip rule fwmark 0x2022 lookup main priority 8999`;
 - трафик с меткой уходит в main table, минуя TUN;
 - kill switch разрешает `meta mark 0x2022`, поэтому VPN-транспорт не режется;
-- TUN-ядро helper запускает через тот же launcher, поэтому оно тоже попадает
-  в cgroup до создания сокетов;
-- `start_tun` проверяет, что переданные PID уже находятся в cgroup; иначе
-  просит переподключиться, чтобы не включить петлю;
-- `M3VPN_SKIP_CGROUP_MARK=1` используется только в netns-тесте, где cgroup
-  недоступна.
+- TUN-ядро запускается helper'ом от root, наследует `CAP_NET_ADMIN` и ставит
+  `route.default_mark = 0x2022` сам;
+- `start_tun` проверяет, что front/backend находятся в cgroup приложения;
+- helper отказывается маркировать слишком широкую cgroup (`user@...service`),
+  чтобы не завернуть в обход TUN все процессы пользователя;
+- netns-тест проверяет и cgroup-правило, и fwmark.
 
 Удаление:
 

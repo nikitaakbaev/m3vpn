@@ -610,21 +610,7 @@ fn spawn(
     let log = File::create(log_path).with_context(|| format!("create {}", log_path.display()))?;
     let stdout = log.try_clone().context("clone core log handle")?;
 
-    let launcher = if !cfg!(test) && crate::helper_client::HelperClient::new().available() {
-        crate::helper_client::helper_binary()
-    } else {
-        None
-    };
-    let mut command = match launcher {
-        // The launcher joins the proxy cgroup (for TUN packet marking) and
-        // then execs the core, so sockets are born in the right cgroup.
-        Some(helper) => {
-            let mut command = Command::new(helper);
-            command.arg("launch").arg("--").arg(binary);
-            command
-        }
-        None => Command::new(binary),
-    };
+    let mut command = Command::new(binary);
     command
         .arg("run")
         .arg("-c")

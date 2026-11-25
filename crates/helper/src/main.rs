@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs::{self, File};
@@ -14,7 +14,6 @@ const DEFAULT_SOCKET: &str = "/run/m3vpn/helper.sock";
 const DEFAULT_RUN_DIR: &str = "/run/m3vpn";
 const DEFAULT_SINGBOX: &str = "/usr/lib/m3vpn/sidecars/bin/hiddify-sing-box";
 const FRONT_MARK: &str = "0x2022";
-const PROXY_CGROUP: &str = "/sys/fs/cgroup/m3vpn-proxy";
 const MARK_TABLE: &str = "m3vpn_mark";
 
 #[derive(Debug, Deserialize)]
@@ -35,9 +34,6 @@ enum Request {
     Status,
     Panic,
     Restore,
-    JoinCgroup {
-        pid: u32,
-    },
 }
 
 #[derive(Debug, Serialize)]
@@ -87,7 +83,6 @@ fn main() {
         "stop" => client_command(json!({ "cmd": "stop_tun" })).map(|value| print_json(&value)),
         "panic" => client_command(json!({ "cmd": "panic" })).map(|value| print_json(&value)),
         "start-tun" => client_command(parse_start_args(&args)).map(|value| print_json(&value)),
-        "launch" => launch_core(&args),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -113,7 +108,7 @@ fn print_json(value: &Value) {
 
 fn print_help() {
     println!(
-        "m3vpn-helper run | status | stop | panic | restore | start-tun --app-pid N --socks-port N --proxy-pid N [--proxy-pid N ...] [--front-pid N] [--kill-switch]"
+        "m3vpn-helper run | status | stop | panic | restore | start-tun --app-pid N --socks-port N [--proxy-pid N ...] [--front-pid N] [--kill-switch]"
     );
 }
 
@@ -190,7 +185,6 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             restore_from_disk(&run_dir)?;
             Ok(Response::ok(false))
         }
-        Request::JoinCgroup { pid } => join_cgroup(pid).map(|_| Response::ok(false)),
     }
     .unwrap_or_else(|error| Response::error(format!("{error:#}")));
 
@@ -233,7 +227,7 @@ fn start_tun(
 
     snapshot(run_dir)?;
     let bypass = install_front_bypass()?;
-    if let Err(error) = install_proxy_mark(proxy_pids) {
+    if let Err(error) = install_proxy_mark(app_pid, proxy_pids) {
         drop(bypass);
         restore_network(run_dir);
         return Err(error);
@@ -246,13 +240,9 @@ fn start_tun(
     set_mode(&config_path, 0o600)?;
 
     let binary = singbox_path()?;
-    let launcher = std::env::current_exe().context("resolve helper path")?;
     let log = File::create(run_dir.join("tun.log"))?;
     let stdout = log.try_clone()?;
-    let mut child = Command::new(launcher)
-        .arg("launch")
-        .arg("--")
-        .arg(&binary)
+    let mut child = Command::new(&binary)
         .arg("run")
         .arg("-c")
         .arg(&config_path)
@@ -262,13 +252,6 @@ fn start_tun(
         .spawn()
         .with_context(|| format!("spawn {}", binary.display()))?;
 
-    if let Err(error) = add_proxy_pid(child.id()) {
-        let _ = child.kill();
-        let _ = child.wait();
-        cleanup_tun_interface();
-        restore_network(run_dir);
-        return Err(error);
-    }
     if let Err(error) = wait_for_interface(&mut child, run_dir) {
         let _ = child.kill();
         let _ = child.wait();
@@ -477,22 +460,42 @@ fn cleanup_tun_interface() {
         .output();
 }
 
-/// Moves front/backend processes into a dedicated cgroup. A root-owned nft
-/// output rule marks packets from that cgroup, so proxy transport bypasses TUN
-/// without giving the unprivileged sidecars CAP_NET_ADMIN for SO_MARK.
-fn install_proxy_mark(proxy_pids: &[u32]) -> Result<()> {
-    if std::env::var("M3VPN_SKIP_CGROUP_MARK").as_deref() == Ok("1") {
-        return Ok(());
-    }
-    if proxy_pids.is_empty() {
-        bail!("no proxy processes passed for TUN marking");
-    }
-    if let Some(pid) = proxy_pids.iter().find(|pid| !pid_in_proxy_cgroup(**pid)) {
+/// Marks the app's own systemd cgroup so front/backend transport bypasses TUN.
+/// The app and all cores it spawns live in this cgroup already, so no cgroup
+/// creation or pre-exec launcher is needed. The leaf must be an app-specific
+/// service/scope; marking a broad user manager cgroup would bypass TUN for
+/// every user process.
+fn install_proxy_mark(app_pid: u32, proxy_pids: &[u32]) -> Result<()> {
+    let app_cgroup = cgroup_path(app_pid)?;
+    let leaf = app_cgroup
+        .rsplit('/')
+        .next()
+        .filter(|leaf| !leaf.is_empty())
+        .ok_or_else(|| anyhow!("/proc/{app_pid}/cgroup has no v2 path"))?;
+    if leaf.contains("user@") || !(leaf.ends_with(".service") || leaf.ends_with(".scope")) {
         bail!(
-            "proxy process {pid} is not in {PROXY_CGROUP}; restart the connection after installing 0.2.0"
+            "app cgroup {app_cgroup} is too broad for TUN marking; launch m3vpn from the desktop"
         );
     }
-    fs::create_dir_all(PROXY_CGROUP).with_context(|| format!("create cgroup {PROXY_CGROUP}"))?;
+    for pid in proxy_pids {
+        let path = cgroup_path(*pid)?;
+        if path != app_cgroup && !path.starts_with(&format!("{app_cgroup}/")) {
+            bail!("proxy process {pid} is outside the app cgroup {app_cgroup}");
+        }
+    }
+    let relative = app_cgroup.trim_start_matches('/');
+    let components: Vec<&str> = relative.split('/').collect();
+    if components.is_empty() {
+        bail!("invalid app cgroup {app_cgroup}");
+    }
+    if !relative
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '@' | ':' | '/'))
+    {
+        bail!("unsupported characters in app cgroup {app_cgroup}");
+    }
+    let level = components.len().to_string();
+    let path = format!("\"{relative}\"");
     remove_proxy_mark();
     let chain = "{ type route hook output priority -150; }";
     let commands: Vec<Vec<String>> = vec![
@@ -519,8 +522,8 @@ fn install_proxy_mark(proxy_pids: &[u32]) -> Result<()> {
             "socket".into(),
             "cgroupv2".into(),
             "level".into(),
-            "1".into(),
-            "m3vpn-proxy".into(),
+            level,
+            path,
             "meta".into(),
             "mark".into(),
             "set".into(),
@@ -543,30 +546,17 @@ fn install_proxy_mark(proxy_pids: &[u32]) -> Result<()> {
     Ok(())
 }
 
-fn add_proxy_pid(pid: u32) -> Result<()> {
-    if std::env::var("M3VPN_SKIP_CGROUP_MARK").as_deref() == Ok("1") {
-        return Ok(());
+fn cgroup_path(pid: u32) -> Result<String> {
+    let text = fs::read_to_string(format!("/proc/{pid}/cgroup"))
+        .with_context(|| format!("read /proc/{pid}/cgroup"))?;
+    let path = text
+        .lines()
+        .find_map(|line| line.strip_prefix("0::"))
+        .ok_or_else(|| anyhow!("process {pid} is not in a cgroup v2 hierarchy"))?;
+    if path == "/" {
+        bail!("process {pid} is in the root cgroup; cannot scope TUN transport");
     }
-    fs::write(format!("{PROXY_CGROUP}/cgroup.procs"), pid.to_string())
-        .with_context(|| format!("move pid {pid} to {PROXY_CGROUP}"))?;
-    Ok(())
-}
-
-fn join_cgroup(pid: u32) -> Result<()> {
-    if std::env::var("M3VPN_SKIP_CGROUP_MARK").as_deref() == Ok("1") {
-        return Ok(());
-    }
-    fs::create_dir_all(PROXY_CGROUP).with_context(|| format!("create cgroup {PROXY_CGROUP}"))?;
-    add_proxy_pid(pid)
-}
-
-fn pid_in_proxy_cgroup(pid: u32) -> bool {
-    if std::env::var("M3VPN_SKIP_CGROUP_MARK").as_deref() == Ok("1") {
-        return true;
-    }
-    fs::read_to_string(format!("/proc/{pid}/cgroup"))
-        .map(|text| text.lines().any(|line| line.ends_with("/m3vpn-proxy")))
-        .unwrap_or(false)
+    Ok(path.to_string())
 }
 
 fn remove_proxy_mark() {
@@ -659,7 +649,8 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
                 { "ip_is_private": true, "outbound": "direct" }
             ],
             "final": "proxy",
-            "auto_detect_interface": true
+            "auto_detect_interface": true,
+            "default_mark": 0x2022
         }
     })
 }
@@ -889,35 +880,6 @@ fn parse_start_args(args: &[String]) -> Value {
     })
 }
 
-/// Unprivileged launcher used by the app for proxy cores. It joins the TUN
-/// proxy cgroup before exec, so every socket the core creates is marked by the
-/// helper's nftables rule. If the helper is unavailable the core still starts,
-/// keeping proxy mode fail-open.
-fn launch_core(args: &[String]) -> Result<()> {
-    let separator = args
-        .iter()
-        .position(|arg| arg == "--")
-        .ok_or_else(|| anyhow::anyhow!("usage: m3vpn-helper launch -- <program> [args...]"))?;
-    let program = args
-        .get(separator + 1)
-        .ok_or_else(|| anyhow::anyhow!("missing program after --"))?;
-    let program_args = &args[separator + 2..];
-    if unsafe { libc::geteuid() } == 0 {
-        // The TUN core is spawned by the root helper: join directly and fail
-        // hard, because an unmarked TUN core would route its own traffic back
-        // into TUN.
-        join_cgroup(std::process::id())?;
-    } else if let Err(error) = client_command(json!({
-        "cmd": "join_cgroup",
-        "pid": std::process::id()
-    })) {
-        eprintln!("m3vpn-helper launch: proxy cgroup skipped: {error:#}");
-    }
-    use std::os::unix::process::CommandExt;
-    let error = Command::new(program).args(program_args).exec();
-    Err(anyhow::Error::from(error)).with_context(|| format!("exec {program}"))
-}
-
 fn client_command(request: Value) -> Result<Value> {
     let socket = socket_path();
     let mut stream =
@@ -952,6 +914,7 @@ mod tests {
         assert_eq!(config["outbounds"][0]["type"], "socks");
         assert_eq!(config["outbounds"][0]["server_port"], 10808);
         assert_eq!(config["route"]["final"], "proxy");
+        assert_eq!(config["route"]["default_mark"], 0x2022);
         assert_eq!(config["dns"]["final"], "dns-bootstrap");
     }
 

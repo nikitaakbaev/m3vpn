@@ -19,7 +19,6 @@ WORK="\$(mktemp -d)"
 export M3VPN_RUN_DIR="\$WORK/run"
 export M3VPN_HELPER_SOCKET="\$WORK/run/helper.sock"
 export M3VPN_SINGBOX="\$SINGBOX"
-export M3VPN_SKIP_CGROUP_MARK=1
 mkdir -p "\$M3VPN_RUN_DIR"
 
 cleanup() {
