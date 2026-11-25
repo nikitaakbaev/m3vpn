@@ -622,7 +622,7 @@ fn wait_for_interface(child: &mut Child, run_dir: &Path) -> Result<()> {
 fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
     let (dns_servers, dns_final) = tun_dns_servers(dns);
     json!({
-        "log": { "level": "warn", "timestamp": true },
+        "log": { "level": "info", "timestamp": true },
         "dns": {
             "servers": dns_servers,
             "final": dns_final
