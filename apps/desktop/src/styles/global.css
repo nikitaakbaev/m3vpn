@@ -383,7 +383,7 @@ button {
   margin-bottom: 12px;
 }
 
-.card-heading h3 {
+.card-heading h2 {
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.4px;
@@ -1081,7 +1081,7 @@ input[type="number"]::-webkit-inner-spin-button {
   gap: 12px;
 }
 
-.section-head h3 {
+.section-head h2 {
   font-size: 15px;
   font-weight: 650;
 }
@@ -1354,7 +1354,7 @@ input[type="number"]::-webkit-inner-spin-button {
   margin-bottom: 12px;
 }
 
-.server-group__head h3 {
+.server-group__head h2 {
   font-size: 14px;
   font-weight: 650;
 }
@@ -1492,8 +1492,9 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .profile-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 .profile-card {
@@ -1527,7 +1528,7 @@ input[type="number"]::-webkit-inner-spin-button {
   background: color-mix(in srgb, var(--m3-accent) 10%, transparent);
 }
 
-.profile-card__title h3 {
+.profile-card__title h2 {
   font-size: 15px;
   font-weight: 650;
   overflow: hidden;
@@ -1732,6 +1733,7 @@ input[type="number"]::-webkit-inner-spin-button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 .settings-card {
@@ -2453,4 +2455,53 @@ input[type="number"]::-webkit-inner-spin-button {
 .server-row.is-excluded .server-row__name,
 .server-row.is-excluded .server-row__meta {
   opacity: 0.5;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbar-bulk {
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--m3-border) 70%, transparent);
+}
+
+.bulk-check {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+  border-radius: 50%;
+  border: 2px solid var(--md-sys-color-outline);
+  color: var(--m3-accent-ink);
+}
+
+.bulk-check.is-on {
+  border-color: var(--m3-accent);
+  background: var(--m3-accent);
+}
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  transform: translateY(-160%);
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: var(--m3-accent);
+  color: var(--m3-accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 120ms ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }

@@ -458,6 +458,17 @@ pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<S
     Ok(result)
 }
 
+pub fn set_servers_excluded(
+    conn: &Connection,
+    server_ids: &[String],
+    excluded: bool,
+) -> Result<()> {
+    for server_id in server_ids {
+        set_server_excluded(conn, server_id, excluded)?;
+    }
+    Ok(())
+}
+
 pub fn set_server_excluded(conn: &Connection, server_id: &str, excluded: bool) -> Result<()> {
     let (protocol, host, port, name): (String, Option<String>, Option<i64>, String) = conn
         .query_row(
@@ -631,7 +642,7 @@ mod tests {
         save_import(&conn, &profile, std::slice::from_ref(&server)).expect("save");
         assert!(!list_servers(&conn, None).unwrap()[0].excluded);
 
-        set_server_excluded(&conn, "p1:0", true).expect("exclude");
+        set_servers_excluded(&conn, &["p1:0".to_string()], true).expect("exclude");
         assert!(list_servers(&conn, None).unwrap()[0].excluded);
 
         save_import(&conn, &profile, &[server]).expect("reimport");

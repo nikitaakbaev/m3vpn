@@ -89,7 +89,7 @@ export function SettingsPage() {
         <Card className="settings-card">
           <div className="card-heading">
             <Icon name="palette" size={20} />
-            <h3>{t("settings.appearance")}</h3>
+            <h2>{t("settings.appearance")}</h2>
           </div>
 
           <div className="settings-row">
@@ -153,7 +153,7 @@ export function SettingsPage() {
         <Card className="settings-card">
           <div className="card-heading">
             <Icon name="lan" size={20} />
-            <h3>{t("settings.connection")}</h3>
+            <h2>{t("settings.connection")}</h2>
           </div>
 
           <div className="settings-row">
@@ -243,7 +243,7 @@ export function SettingsPage() {
         <Card className="settings-card">
           <div className="card-heading">
             <Icon name="speed" size={20} />
-            <h3>{t("settings.ping")}</h3>
+            <h2>{t("settings.ping")}</h2>
           </div>
 
           <div className="settings-row">
@@ -454,7 +454,7 @@ export function SettingsPage() {
         <Card className="settings-card">
           <div className="card-heading">
             <Icon name="rocket_launch" size={20} />
-            <h3>{t("settings.startup")}</h3>
+            <h2>{t("settings.startup")}</h2>
           </div>
 
           <div className="settings-row">
@@ -485,7 +485,7 @@ export function SettingsPage() {
         <Card className="settings-card">
           <div className="card-heading">
             <Icon name="system_update" size={20} />
-            <h3>{t("settings.updates")}</h3>
+            <h2>{t("settings.updates")}</h2>
           </div>
 
           <div className="settings-row settings-row--column">
@@ -599,7 +599,7 @@ export function SettingsPage() {
         <Card className="settings-card">
           <div className="card-heading">
             <Icon name="memory" size={20} />
-            <h3>{t("settings.core")}</h3>
+            <h2>{t("settings.core")}</h2>
           </div>
           <div className="settings-row">
             <div className="settings-row__text">
@@ -636,7 +636,7 @@ export function SettingsPage() {
         <Card className="settings-card">
           <div className="card-heading">
             <Icon name="description" size={20} />
-            <h3>{t("settings.logs")}</h3>
+            <h2>{t("settings.logs")}</h2>
           </div>
           <div className="settings-row">
             <div className="settings-row__text">
@@ -652,7 +652,7 @@ export function SettingsPage() {
         <Card className="settings-card">
           <div className="card-heading">
             <Icon name="info" size={20} />
-            <h3>{t("settings.about")}</h3>
+            <h2>{t("settings.about")}</h2>
           </div>
           <dl className="facts facts--two">
             <div>

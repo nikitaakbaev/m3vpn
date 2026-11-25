@@ -44,7 +44,8 @@ interface AppStore {
   pollStatus: () => Promise<void>;
   set: (key: string, value: string) => Promise<void>;
   selectServer: (serverId: string) => void;
-  setServerExcluded: (serverId: string, excluded: boolean) => Promise<void>;
+  setServerExcluded: (serverId: string, excluded: boolean) => Promise<boolean>;
+  setServersExcluded: (serverIds: string[], excluded: boolean) => Promise<boolean>;
   connect: (serverId?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   importSubscription: (url: string, name?: string) => Promise<api.ImportSummary>;
@@ -195,12 +196,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
       autoCandidateWins: 0,
     }),
 
-  setServerExcluded: async (serverId, excluded) => {
+  setServerExcluded: async (serverId, excluded) =>
+    get().setServersExcluded([serverId], excluded),
+
+  setServersExcluded: async (serverIds, excluded) => {
+    if (serverIds.length === 0) return false;
     try {
+      const ids = new Set(serverIds);
       const before = get();
-      const wasConnected = before.status.running && before.status.serverId === serverId;
-      const wasSelected = !before.status.running && before.selectedServerId === serverId;
-      await api.setServerExcluded(serverId, excluded);
+      const wasConnected = before.status.running && ids.has(before.status.serverId ?? "");
+      const wasSelected = !before.status.running && ids.has(before.selectedServerId ?? "");
+      await api.setServersExcluded(serverIds, excluded);
       await get().refreshData();
       const state = get();
       // Excluding the active server must not leave auto mode stuck on it.
@@ -227,8 +233,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
           await get().probeAll(wasConnected, true);
         }
       }
+      return true;
     } catch (error) {
       set({ lastError: String(error) });
+      return false;
     }
   },
 
@@ -417,8 +425,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
             set({ autoCandidateId: null, autoCandidateWins: 0 });
             await get().connect(best.serverId);
             const bestServer = state.servers.find((server) => server.id === best.serverId);
+            const from = current
+              ? `${current.name} · ${current.latencyMs ?? "—"} ms`
+              : "—";
+            const to = `${bestServer?.name ?? best.serverId} · ${best.latencyMs ?? "—"} ms`;
             get().notify(
-              `${translate(lang, "servers.autoSwitched")}: ${bestServer?.name ?? best.serverId}`,
+              `${translate(lang, "servers.autoSwitched")}: ${to} ← ${from}`,
             );
           } else {
             set({ autoCandidateId: best.serverId, autoCandidateWins: wins });

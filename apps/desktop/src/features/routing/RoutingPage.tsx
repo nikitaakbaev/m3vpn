@@ -157,7 +157,7 @@ export function RoutingPage() {
                     <Icon name="route" size={20} />
                   </span>
                   <div>
-                    <h3>{profile.name}</h3>
+                    <h2>{profile.name}</h2>
                     <span className="muted">
                       {t("routing.lastUpdated")}: {formatDate(profile.lastUpdated ?? undefined)}
                     </span>
@@ -222,7 +222,7 @@ export function RoutingPage() {
       <Card className="formats-card">
         <div className="card-heading">
           <Icon name="verified" size={20} />
-          <h3>{t("routing.formatsTitle")}</h3>
+          <h2>{t("routing.formatsTitle")}</h2>
         </div>
         <p>{t("routing.formatsText")}</p>
         <div className="chip-row">

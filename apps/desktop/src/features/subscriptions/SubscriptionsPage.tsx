@@ -127,7 +127,7 @@ export function SubscriptionsPage() {
                       <Icon name="rss_feed" size={20} />
                     </span>
                     <div>
-                      <h3>{profile.name}</h3>
+                      <h2>{profile.name}</h2>
                       <span className="muted">
                         {profile.serverCount} {t("home.serversShort")} · {t("subs.every")}{" "}
                         {profile.updateIntervalHours} {t("subs.hours")}
@@ -171,7 +171,14 @@ export function SubscriptionsPage() {
                       <strong>{formatBytes(used)}</strong>
                       <span className="muted">/ {formatBytes(total)}</span>
                     </div>
-                    <div className="progress">
+                    <div
+                      className="progress"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={percent}
+                      aria-label={t("subs.trafficUsed")}
+                    >
                       <span style={{ width: `${percent}%` }} />
                     </div>
                     <div className="profile-card__meta">
@@ -201,7 +208,7 @@ export function SubscriptionsPage() {
       <Card className="formats-card">
         <div className="card-heading">
           <Icon name="verified" size={20} />
-          <h3>{t("subs.formatsTitle")}</h3>
+          <h2>{t("subs.formatsTitle")}</h2>
         </div>
         <p>{t("subs.formatsText")}</p>
         <div className="chip-row">

@@ -138,6 +138,9 @@ export default function App() {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main-content">
+        {t("a11y.skip")}
+      </a>
       <NavRail page={page} onNavigate={setPage} />
       <div className="app__main">
         <header className="topbar" data-tauri-drag-region>
@@ -150,7 +153,7 @@ export default function App() {
             <span className="pill pill--tonal">{t("topbar.badge")}</span>
           </div>
         </header>
-        <main className="content">
+        <main id="main-content" className="content" tabIndex={-1}>
           {page === "home" ? <HomePage onNavigate={setPage} /> : null}
           {page === "servers" ? <ServersPage onNavigate={setPage} /> : null}
           {page === "subscriptions" ? <SubscriptionsPage /> : null}

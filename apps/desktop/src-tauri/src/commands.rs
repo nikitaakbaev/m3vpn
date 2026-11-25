@@ -585,16 +585,20 @@ pub fn open_external(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_server_excluded(
+pub fn set_servers_excluded(
     state: State<'_, AppState>,
-    server_id: String,
+    server_ids: Vec<String>,
     excluded: bool,
 ) -> Result<(), String> {
+    if server_ids.is_empty() || server_ids.len() > 5000 {
+        return Err("некорректный список серверов".to_string());
+    }
     let db = state
         .db
         .lock()
         .map_err(|_| "database lock poisoned".to_string())?;
-    crate::store::set_server_excluded(&db, &server_id, excluded).map_err(|error| error.to_string())
+    crate::store::set_servers_excluded(&db, &server_ids, excluded)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

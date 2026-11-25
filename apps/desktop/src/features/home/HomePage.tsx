@@ -123,7 +123,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
           <Card className="summary-card">
             <div className="card-heading">
               <Icon name="monitoring" size={19} />
-              <h3>{t("home.traffic")}</h3>
+              <h2>{t("home.traffic")}</h2>
             </div>
             {profile ? (
               <>
@@ -152,7 +152,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
           <Card className="core-card">
             <div className="card-heading">
               <Icon name="memory" size={19} />
-              <h3>{t("home.core")}</h3>
+              <h2>{t("home.core")}</h2>
             </div>
             <div className="core-card__row">
               <span className={`status-dot${core?.available ? " is-on" : ""}`} />
@@ -186,7 +186,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
           <Card className="quick-card">
             <div className="section-head">
               <div>
-                <h3>{t("home.quickServers")}</h3>
+                <h2>{t("home.quickServers")}</h2>
                 <p className="muted">{t("home.quickHint")}</p>
               </div>
               <Button variant="text" trailingIcon="arrow_forward" onClick={() => onNavigate("servers")}>
@@ -232,7 +232,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
           <Card className="details-card">
             <div className="card-heading">
               <Icon name="tune" size={19} />
-              <h3>{t("home.details")}</h3>
+              <h2>{t("home.details")}</h2>
             </div>
             <dl className="facts">
               <div>

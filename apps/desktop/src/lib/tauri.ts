@@ -559,14 +559,17 @@ export async function connectServer(serverId: string): Promise<ConnectionStatus>
   return invoke<ConnectionStatus>("connect_server", { serverId });
 }
 
-export async function setServerExcluded(serverId: string, excluded: boolean): Promise<void> {
+export async function setServersExcluded(serverIds: string[], excluded: boolean): Promise<void> {
   if (!isTauri) {
+    const ids = new Set(serverIds);
     mockServers = mockServers.map((server) =>
-      server.id === serverId ? { ...server, excluded, latencyMs: excluded ? null : server.latencyMs } : server,
+      ids.has(server.id)
+        ? { ...server, excluded, latencyMs: excluded ? null : server.latencyMs }
+        : server,
     );
     return;
   }
-  await invoke("set_server_excluded", { serverId, excluded });
+  await invoke("set_servers_excluded", { serverIds, excluded });
 }
 
 export async function disconnectCore(): Promise<ConnectionStatus> {

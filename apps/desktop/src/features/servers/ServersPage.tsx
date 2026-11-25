@@ -3,24 +3,19 @@ import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
+import { Segmented } from "../../components/Segmented";
 import { Icon } from "../../components/Icon";
 import { useAppStore, useT } from "../../store/useAppStore";
 import type { Server } from "../../lib/tauri";
 import type { Page } from "../../components/NavRail";
+import { ServerLatency, type PingDisplay } from "./ServerLatency";
 
 interface ServersPageProps {
   onNavigate: (page: Page) => void;
 }
 
 type SortMode = "group" | "ping" | "name";
-
-function latencyClass(latency: number | null): string {
-  if (latency === null) return "is-unknown";
-  if (latency < 80) return "is-good";
-  if (latency < 200) return "is-ok";
-  if (latency < 500) return "is-warn";
-  return "is-bad";
-}
+type ServerFilter = "all" | "active" | "excluded";
 
 export function ServersPage({ onNavigate }: ServersPageProps) {
   const t = useT();
@@ -36,23 +31,32 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
   const refreshData = useAppStore((state) => state.refreshData);
   const probeAll = useAppStore((state) => state.probeAll);
   const setServerExcluded = useAppStore((state) => state.setServerExcluded);
+  const setServersExcluded = useAppStore((state) => state.setServersExcluded);
   const probing = useAppStore((state) => state.probing);
   const busy = useAppStore((state) => state.busy);
   const settings = useAppStore((state) => state.settings);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ServerFilter>("all");
+  const [bulk, setBulk] = useState(false);
+  const [bulkSelection, setBulkSelection] = useState<Set<string>>(new Set());
   const configuredSort = settings["servers.sort"];
   const sortMode: SortMode =
     configuredSort === "ping" || configuredSort === "name" ? configuredSort : "group";
 
   const filtered = useMemo(() => {
+    const byMode = servers.filter((server) => {
+      if (filter === "excluded") return server.excluded;
+      if (filter === "active") return !server.excluded;
+      return true;
+    });
     const needle = query.trim().toLowerCase();
-    if (!needle) return servers;
-    return servers.filter((server) =>
-      `${server.name} ${server.host ?? ""} ${server.profileName} ${server.protocol}`
+    if (!needle) return byMode;
+    return byMode.filter((server) =>
+      `${server.name} ${server.host ?? ""} ${server.profileName} ${server.protocol} ${server.engine}`
         .toLowerCase()
         .includes(needle),
     );
-  }, [servers, query]);
+  }, [servers, query, filter]);
 
   const ordered = useMemo(() => {
     const list = [...filtered];
@@ -93,7 +97,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         ? "servers.sortName"
         : "servers.sortGroup";
   const pingMode = settings["ping.protocol"] ?? "fast_http";
-  const pingDisplay = settings["ping.display"] ?? "both";
+  const pingDisplay = (settings["ping.display"] ?? "both") as PingDisplay;
   const pingLabelKey =
     pingMode === "tcp"
       ? "servers.tcpPing"
@@ -103,38 +107,36 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
           ? "servers.pingHead"
           : "servers.pingFastHttp";
 
-  const renderLatency = (server: Server) => {
-    const ms = server.latencyMs;
-    const cls = latencyClass(ms);
-    const label = ms === null ? "—" : `${ms} ms`;
-    const percent =
-      ms === null ? 0 : Math.max(8, Math.min(100, 100 - Math.min(ms, 600) / 6));
-    if (pingDisplay === "dots") {
-      return <span className={`latency-dot ${cls}`} title={label} aria-label={label} />;
+  const toggleSelected = (serverId: string) => {
+    setBulkSelection((current) => {
+      const next = new Set(current);
+      if (next.has(serverId)) next.delete(serverId);
+      else next.add(serverId);
+      return next;
+    });
+  };
+
+  const toggleBulk = () => {
+    setBulk((current) => !current);
+    setBulkSelection(new Set());
+  };
+
+  const changeFilter = (value: ServerFilter) => {
+    setFilter(value);
+    setBulkSelection(new Set());
+  };
+
+  const applyBulk = async (excluded: boolean) => {
+    if (bulkSelection.size === 0) return;
+    if (await setServersExcluded([...bulkSelection], excluded)) {
+      setBulkSelection(new Set());
     }
-    if (pingDisplay === "scale") {
-      return (
-        <span className={`latency-bar ${cls}`} title={label} aria-label={label}>
-          <span style={{ width: `${percent}%` }} />
-        </span>
-      );
-    }
-    if (pingDisplay === "both") {
-      return (
-        <span className="latency-cell">
-          <span className={`latency-bar ${cls}`} aria-hidden="true">
-            <span style={{ width: `${percent}%` }} />
-          </span>
-          <span className={`latency ${cls}`}>{label}</span>
-        </span>
-      );
-    }
-    return <span className={`latency ${cls}`}>{label}</span>;
   };
 
   const renderRow = (server: Server) => {
     const selected = server.id === selectedServerId;
     const connected = connectedServerId === server.id;
+    const checked = bulkSelection.has(server.id);
     return (
       <div
         key={server.id}
@@ -159,7 +161,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         {server.excluded ? (
           <span className="pill pill--muted">{t("servers.excluded")}</span>
         ) : (
-          renderLatency(server)
+          <ServerLatency latency={server.latencyMs} display={pingDisplay} />
         )}
         <button
           type="button"
@@ -250,28 +252,81 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         </div>
 
         <div className="toolbar-row toolbar-row--between">
-          <Button variant="text" icon="tune" onClick={() => onNavigate("settings")}>
-            {t("servers.sortedBy")}: {t(sortLabelKey)}
-          </Button>
+          <div className="toolbar-left">
+            <Button variant="text" icon="tune" onClick={() => onNavigate("settings")}>
+              {t("servers.sortedBy")}: {t(sortLabelKey)}
+            </Button>
+            <Segmented
+              value={filter}
+              label={t("servers.filter")}
+              options={[
+                { value: "all", label: t("servers.filterAll") },
+                { value: "active", label: t("servers.filterActive") },
+                { value: "excluded", label: t("servers.filterExcluded") },
+              ]}
+              onChange={(value) => changeFilter(value as ServerFilter)}
+            />
+          </div>
           <div className="toolbar-actions">
             <span className="muted toolbar-note">{t(pingLabelKey)}</span>
             <Button
               variant="tonal"
               icon={probing ? "progress_activity" : "speed"}
-              disabled={probing || eligibleCount === 0}
+              disabled={probing || bulk || eligibleCount === 0}
               onClick={() => void probeAll()}
             >
               {probing ? t("servers.probing") : t("servers.probe")}
             </Button>
             <Button
               icon="bolt"
-              disabled={probing || busy || eligibleCount === 0}
+              disabled={probing || busy || bulk || eligibleCount === 0}
               onClick={() => void probeAll(true)}
             >
               {t("servers.fastest")}
             </Button>
+            <Button
+              variant={bulk ? "tonal" : "text"}
+              icon={bulk ? "done" : "checklist"}
+              onClick={toggleBulk}
+            >
+              {bulk ? t("servers.bulkDone") : t("servers.bulk")}
+            </Button>
           </div>
         </div>
+        {bulk ? (
+          <div className="toolbar-row toolbar-bulk">
+            <span className="muted">
+              {t("servers.selected")}: <strong>{bulkSelection.size}</strong>
+            </span>
+            <div className="toolbar-actions">
+              <Button
+                variant="text"
+                onClick={() => setBulkSelection(new Set(filtered.map((server) => server.id)))}
+              >
+                {t("servers.selectAll")}
+              </Button>
+              <Button variant="text" onClick={() => setBulkSelection(new Set())}>
+                {t("servers.clearSelection")}
+              </Button>
+              <Button
+                variant="outlined"
+                icon="visibility_off"
+                disabled={bulkSelection.size === 0}
+                onClick={() => void applyBulk(true)}
+              >
+                {t("servers.excludeSelected")}
+              </Button>
+              <Button
+                variant="outlined"
+                icon="visibility"
+                disabled={bulkSelection.size === 0}
+                onClick={() => void applyBulk(false)}
+              >
+                {t("servers.includeSelected")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       {servers.length === 0 ? (
@@ -291,10 +346,24 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         <Card className="empty-card">
           <EmptyState
             icon="search_off"
-            title={t("servers.notFound")}
+            title={t(
+              query.trim()
+                ? "servers.notFound"
+                : filter === "excluded"
+                  ? "servers.noExcluded"
+                  : filter === "active"
+                    ? "servers.noActive"
+                    : "servers.notFound",
+            )}
             text={t("servers.notFoundHint")}
             action={
-              <Button variant="tonal" onClick={() => setQuery("")}>
+              <Button
+                variant="tonal"
+                onClick={() => {
+                  setQuery("");
+                  changeFilter("all");
+                }}
+              >
                 {t("common.clear")}
               </Button>
             }
@@ -306,7 +375,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             <Card key={profileName} className="server-group">
               <div className="server-group__head">
                 <div>
-                  <h3>{profileName}</h3>
+                  <h2>{profileName}</h2>
                   <span className="muted">
                     {group.length} {t("home.serversShort")}
                   </span>
@@ -320,9 +389,9 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         <Card className="server-group">
           <div className="server-group__head">
             <div>
-              <h3>
+              <h2>
                 {sortMode === "ping" ? t("servers.sortPing") : t("servers.sortName")}
-              </h3>
+              </h2>
               <span className="muted">{ordered.length}</span>
             </div>
           </div>
