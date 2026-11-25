@@ -264,7 +264,7 @@ fn start_tun(
         .with_context(|| format!("spawn {}", binary.display()))?;
 
     if let Err(error) = wait_for_interface(&mut child, run_dir) {
-        let _ = child.kill();
+        terminate(child.id() as i32);
         let _ = child.wait();
         cleanup_tun_interface();
         restore_network(run_dir);
@@ -296,7 +296,7 @@ fn start_tun(
         Ok(())
     })();
     if let Err(error) = active_result {
-        let _ = child.kill();
+        terminate(child.id() as i32);
         let _ = child.wait();
         let _ = remove_kill_switch();
         cleanup_tun_interface();
@@ -358,7 +358,7 @@ fn stop_tun(state: &Shared, run_dir: &Path) -> Result<Response> {
     };
 
     if let Some(mut session) = session {
-        let _ = session.child.kill();
+        terminate(session.child.id() as i32);
         let _ = session.child.wait();
         if session.kill_switch {
             let _ = remove_kill_switch();
@@ -470,6 +470,34 @@ fn cleanup_tun_interface() {
     let _ = Command::new("ip")
         .args(["route", "flush", "table", "2022"])
         .output();
+    remove_auto_redirect_leftovers();
+}
+
+/// auto_redirect creates its own nft table and fallback ip rule. A killed
+/// core cannot clean them up, so the helper removes stale artifacts on stop
+/// and at startup.
+fn remove_auto_redirect_leftovers() {
+    let _ = Command::new("nft")
+        .args(["delete", "table", "inet", "sing-box"])
+        .output();
+    let Ok(output) = Command::new("ip").args(["rule", "show"]).output() else {
+        return;
+    };
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        if !line.contains("lookup 2022") || !line.contains("0x2022/0x2027") {
+            continue;
+        }
+        let Some(priority) = line
+            .split(':')
+            .next()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let _ = Command::new("ip")
+            .args(["rule", "del", "priority", &priority.to_string()])
+            .output();
+    }
 }
 
 /// Marks the app's own systemd cgroup so front/backend transport bypasses TUN.
@@ -682,10 +710,20 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
             "interface_name": IFACE,
             "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
             "auto_route": true,
+            "auto_redirect": true,
+            "auto_redirect_output_mark": 0x2022,
             "strict_route": false,
             "stack": "gvisor",
             "gso": false,
-            "mtu": 9000
+            "mtu": 9000,
+            "route_exclude_address": [
+                "10.0.0.0/8",
+                "169.254.0.0/16",
+                "172.16.0.0/12",
+                "192.168.0.0/16",
+                "fc00::/7",
+                "fe80::/10"
+            ]
         }],
         "outbounds": [
             {
@@ -694,7 +732,7 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
                 "server": "127.0.0.1",
                 "server_port": socks_port
             },
-            { "type": "direct", "tag": "direct", "routing_mark": 0x2022 }
+            { "type": "direct", "tag": "direct" }
         ],
         "route": {
             "rules": [
@@ -804,6 +842,15 @@ fn apply_kill_switch() -> Result<()> {
         ],
         &[
             "add", "rule", "inet", "m3vpn", "output", "meta", "mark", FRONT_MARK, "accept",
+        ],
+        &[
+            "add", "rule", "inet", "m3vpn", "output", "meta", "mark", "0x2023", "accept",
+        ],
+        &[
+            "add", "rule", "inet", "m3vpn", "output", "meta", "mark", "0x2024", "accept",
+        ],
+        &[
+            "add", "rule", "inet", "m3vpn", "output", "meta", "mark", "0x2025", "accept",
         ],
         &[
             "add",
@@ -984,8 +1031,9 @@ mod tests {
         assert_eq!(config["outbounds"][0]["type"], "socks");
         assert_eq!(config["outbounds"][0]["server_port"], 10808);
         assert_eq!(config["route"]["final"], "proxy");
-        assert_eq!(config["outbounds"][1]["routing_mark"], 0x2022);
-        assert!(config["route"].get("default_mark").is_none());
+        assert!(config["outbounds"][1].get("routing_mark").is_none());
+        assert_eq!(config["inbounds"][0]["auto_redirect"], true);
+        assert_eq!(config["inbounds"][0]["auto_redirect_output_mark"], 0x2022);
         assert_eq!(config["dns"]["final"], "dns-bootstrap");
         assert_eq!(config["dns"]["servers"][0]["type"], "https");
         assert_eq!(config["route"]["rules"][2]["ip_cidr"][0], "10.0.0.0/8");
