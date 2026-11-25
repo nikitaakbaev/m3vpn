@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+      options: --user root
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            appstream \
+            curl \
+            desktop-file-utils \
+            fakeroot \
+            git \
+            gtk3 \
+            jq \
+            libappindicator \
+            nodejs \
+            npm \
+            python \
+            rust \
+            shadow \
+            unzip \
+            webkit2gtk-4.1 \
+            xdotool
+
+      - name: Verify tag matches package version
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("apps/desktop/src-tauri/tauri.conf.json"))["version"])')"
+          tag="${GITHUB_REF_NAME#v}"
+          test "$version" = "$tag" || (echo "tag $tag != version $version" >&2; exit 1)
+
+      - name: Build sidecars, app, helper and packages
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE' && bash scripts/build-sidecars.sh"
+          su builder -c "cd '$GITHUB_WORKSPACE/apps/desktop' && npm ci"
+          su builder -c "cd '$GITHUB_WORKSPACE' && bash scripts/package-arch.sh"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.pkg.tar.zst
+            dist/*.tar.gz
+          generate_release_notes: true
