@@ -246,9 +246,13 @@ fn start_tun(
     set_mode(&config_path, 0o600)?;
 
     let binary = singbox_path()?;
+    let launcher = std::env::current_exe().context("resolve helper path")?;
     let log = File::create(run_dir.join("tun.log"))?;
     let stdout = log.try_clone()?;
-    let mut child = Command::new(&binary)
+    let mut child = Command::new(launcher)
+        .arg("launch")
+        .arg("--")
+        .arg(&binary)
         .arg("run")
         .arg("-c")
         .arg(&config_path)
@@ -898,7 +902,12 @@ fn launch_core(args: &[String]) -> Result<()> {
         .get(separator + 1)
         .ok_or_else(|| anyhow::anyhow!("missing program after --"))?;
     let program_args = &args[separator + 2..];
-    if let Err(error) = client_command(json!({
+    if unsafe { libc::geteuid() } == 0 {
+        // The TUN core is spawned by the root helper: join directly and fail
+        // hard, because an unmarked TUN core would route its own traffic back
+        // into TUN.
+        join_cgroup(std::process::id())?;
+    } else if let Err(error) = client_command(json!({
         "cmd": "join_cgroup",
         "pid": std::process::id()
     })) {

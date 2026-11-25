@@ -31,7 +31,8 @@ front → remote → TUN → front → remote → ...
 - helper добавляет `ip rule fwmark 0x2022 lookup main priority 8999`;
 - трафик с меткой уходит в main table, минуя TUN;
 - kill switch разрешает `meta mark 0x2022`, поэтому VPN-транспорт не режется;
-- TUN-ядро helper добавляет в ту же cgroup перед запуском трафика;
+- TUN-ядро helper запускает через тот же launcher, поэтому оно тоже попадает
+  в cgroup до создания сокетов;
 - `start_tun` проверяет, что переданные PID уже находятся в cgroup; иначе
   просит переподключиться, чтобы не включить петлю;
 - `M3VPN_SKIP_CGROUP_MARK=1` используется только в netns-тесте, где cgroup
