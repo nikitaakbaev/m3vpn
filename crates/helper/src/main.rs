@@ -683,7 +683,7 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
             "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
             "auto_route": true,
             "strict_route": false,
-            "stack": "system",
+            "stack": "mixed",
             "mtu": 9000
         }],
         "outbounds": [
