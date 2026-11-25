@@ -10,8 +10,8 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_GEOIP: &str =
     "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat";
@@ -60,6 +60,52 @@ pub struct GeoStatus {
     pub geoip_bytes: u64,
     pub geosite_bytes: u64,
     pub checked_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleSetStatus {
+    pub tag: String,
+    pub bytes: u64,
+    pub modified_at: Option<i64>,
+}
+
+/// Lists the cached sing-box rule-sets so the UI can show which categories
+/// are ready for the next connection.
+pub fn cached_rule_sets(paths: &AppPaths) -> Vec<RuleSetStatus> {
+    let dir = paths.geo_dir.join("rulesets");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("srs") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let (kind, name) = match stem.split_once('-') {
+            Some((kind, name)) if kind == "geosite" || kind == "geoip" => (kind, name),
+            _ => continue,
+        };
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let modified_at = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|delta| delta.as_secs() as i64);
+        result.push(RuleSetStatus {
+            tag: format!("{kind}:{name}"),
+            bytes: metadata.len(),
+            modified_at,
+        });
+    }
+    result.sort_by(|left, right| left.tag.cmp(&right.tag));
+    result
 }
 
 pub fn parse_profile(text: &str) -> Result<(RoutingProfile, Value, Option<String>)> {
@@ -472,6 +518,68 @@ fn apply_dns(root: &mut Map<String, Value>, profile: &RoutingProfile) {
     }
 }
 
+/// DNS servers handed to the helper for TUN mode. Only the remote resolver is
+/// used: every TUN query is proxied, so a domestic resolver would leak. The
+/// helper adds a proxied bootstrap for resolver hostnames.
+pub fn tun_dns_servers(profile: &RoutingProfile) -> Vec<Value> {
+    let remote = dns_address(
+        &profile.remote_dns_type,
+        &profile.remote_dns_domain,
+        &profile.remote_dns_ip,
+        "https://cloudflare-dns.com/dns-query",
+        "1.1.1.1",
+    );
+    if remote.is_empty() {
+        return Vec::new();
+    }
+    vec![dns_server_from_address(&remote)]
+}
+
+fn dns_server_from_address(address: &str) -> Value {
+    let lower = address.to_ascii_lowercase();
+    let (kind, rest) = if let Some(rest) = lower.strip_prefix("https://") {
+        ("https", &address[address.len() - rest.len()..])
+    } else if let Some(rest) = lower.strip_prefix("tls://") {
+        ("tls", &address[address.len() - rest.len()..])
+    } else if let Some(rest) = lower.strip_prefix("quic://") {
+        ("quic", &address[address.len() - rest.len()..])
+    } else if let Some(rest) = lower.strip_prefix("tcp://") {
+        ("tcp", &address[address.len() - rest.len()..])
+    } else if let Some(rest) = lower.strip_prefix("udp://") {
+        ("udp", &address[address.len() - rest.len()..])
+    } else {
+        ("udp", address)
+    };
+    let (authority, path) = if kind == "https" {
+        match rest.split_once('/') {
+            Some((authority, path)) => (authority, format!("/{path}")),
+            None => (rest, "/dns-query".to_string()),
+        }
+    } else {
+        (rest, String::new())
+    };
+    let (server, port) = split_host_port(authority);
+    let mut value = json!({ "type": kind, "server": server });
+    if let Some(port) = port {
+        value["server_port"] = json!(port);
+    }
+    if kind == "https" {
+        value["path"] = json!(path);
+    }
+    value
+}
+
+fn split_host_port(authority: &str) -> (&str, Option<u16>) {
+    if let Some((host, port)) = authority.rsplit_once(':') {
+        if !host.is_empty() && !host.ends_with(':') {
+            if let Ok(port) = port.parse::<u16>() {
+                return (host, Some(port));
+            }
+        }
+    }
+    (authority, None)
+}
+
 fn dns_address(kind: &str, domain: &str, ip: &str, fallback: &str, fallback_ip: &str) -> String {
     if kind.eq_ignore_ascii_case("DoH") {
         if domain.starts_with("http://") || domain.starts_with("https://") {
@@ -620,7 +728,126 @@ fn is_catch_all(rule: &Value) -> bool {
         .unwrap_or(true)
 }
 
-pub fn apply_singbox(config: &mut Value, profile: &RoutingProfile) -> Result<()> {
+#[derive(Clone, Debug)]
+pub struct SingboxRuleSet {
+    pub tag: String,
+    pub path: PathBuf,
+}
+
+/// Downloads the sing-box rule-sets referenced by a routing profile. Missing
+/// or failed categories are skipped so a profile never prevents connecting.
+pub fn ensure_singbox_rule_sets(paths: &AppPaths, profile: &RoutingProfile) -> Vec<SingboxRuleSet> {
+    let dir = paths.geo_dir.join("rulesets");
+    let _ = std::fs::create_dir_all(&dir);
+    let mut wanted = Vec::new();
+    for item in profile
+        .direct_sites
+        .iter()
+        .chain(profile.proxy_sites.iter())
+        .chain(profile.block_sites.iter())
+    {
+        if let Some(tag) = item.strip_prefix("geosite:") {
+            let tag = normalize_singbox_geo(tag);
+            if valid_geo_tag(&tag)
+                && !wanted
+                    .iter()
+                    .any(|(kind, value)| *kind == "geosite" && value == &tag)
+            {
+                wanted.push(("geosite", tag));
+            }
+        }
+    }
+    for item in profile
+        .direct_ip
+        .iter()
+        .chain(profile.proxy_ip.iter())
+        .chain(profile.block_ip.iter())
+    {
+        if let Some(tag) = item.strip_prefix("geoip:") {
+            let tag = tag.to_ascii_lowercase();
+            if valid_geo_tag(&tag)
+                && !wanted
+                    .iter()
+                    .any(|(kind, value)| *kind == "geoip" && value == &tag)
+            {
+                wanted.push(("geoip", tag));
+            }
+        }
+    }
+
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(6))
+        .user_agent(format!("m3vpn/{}/Linux", env!("CARGO_PKG_VERSION")))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "cannot build rule-set client");
+            return Vec::new();
+        }
+    };
+    let deadline = Instant::now() + Duration::from_secs(12);
+    let mut result = Vec::new();
+    for (kind, tag) in wanted {
+        if Instant::now() >= deadline {
+            tracing::warn!("rule-set download budget exceeded");
+            break;
+        }
+        let filename = format!("{kind}-{tag}.srs");
+        let path = dir.join(&filename);
+        if !path.exists() || path.metadata().map(|meta| meta.len() == 0).unwrap_or(true) {
+            let url = format!(
+                "https://raw.githubusercontent.com/SagerNet/sing-{kind}/rule-set/{filename}"
+            );
+            let response = match client.get(&url).send() {
+                Ok(response) if response.status().is_success() => response,
+                Ok(response) => {
+                    tracing::warn!(url = %url, status = %response.status(), "rule-set download failed");
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(url = %url, %error, "rule-set download failed");
+                    continue;
+                }
+            };
+            let bytes = match response.bytes() {
+                Ok(bytes) if !bytes.is_empty() => bytes,
+                _ => continue,
+            };
+            let temp = path.with_extension("tmp");
+            if std::fs::write(&temp, &bytes).is_err() || std::fs::rename(&temp, &path).is_err() {
+                let _ = std::fs::remove_file(&temp);
+                continue;
+            }
+        }
+        result.push(SingboxRuleSet {
+            tag: format!("m3vpn-{kind}-{tag}"),
+            path,
+        });
+    }
+    result
+}
+
+fn normalize_singbox_geo(tag: &str) -> String {
+    if tag.eq_ignore_ascii_case("ru") {
+        "category-ru".to_string()
+    } else {
+        tag.to_ascii_lowercase()
+    }
+}
+
+fn valid_geo_tag(tag: &str) -> bool {
+    !tag.is_empty()
+        && tag
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
+pub fn apply_singbox(
+    config: &mut Value,
+    profile: &RoutingProfile,
+    rule_sets: &[SingboxRuleSet],
+) -> Result<()> {
     let root = config
         .as_object_mut()
         .ok_or_else(|| anyhow!("sing-box config must be an object"))?;
@@ -645,68 +872,155 @@ pub fn apply_singbox(config: &mut Value, profile: &RoutingProfile) -> Result<()>
     }
     let rules = rules.as_array_mut().expect("route rules");
     let mut prepend = Vec::new();
+    let mut used_sets: Vec<&SingboxRuleSet> = Vec::new();
     if !profile.direct_sites.is_empty()
         || !profile.proxy_sites.is_empty()
         || !profile.block_sites.is_empty()
+        || !profile.direct_ip.is_empty()
+        || !profile.proxy_ip.is_empty()
+        || !profile.block_ip.is_empty()
     {
         // Domain rules only match after sniffing, so the sniff action must
         // precede the profile rules we prepend to the route.
         prepend.push(json!({ "action": "sniff" }));
     }
-    if !profile.direct_sites.is_empty() {
-        prepend.push(json!({
-            "domain_suffix": singbox_domains(&profile.direct_sites),
-            "outbound": "direct"
-        }));
-    }
-    if !profile.direct_ip.is_empty() {
-        prepend.push(json!({
-            "ip_cidr": singbox_ips(&profile.direct_ip),
-            "outbound": "direct"
-        }));
-    }
-    if !profile.proxy_sites.is_empty() {
-        prepend.push(json!({
-            "domain_suffix": singbox_domains(&profile.proxy_sites),
-            "outbound": "proxy"
-        }));
-    }
-    if !profile.proxy_ip.is_empty() {
-        prepend.push(json!({
-            "ip_cidr": singbox_ips(&profile.proxy_ip),
-            "outbound": "proxy"
-        }));
-    }
-    if !profile.block_sites.is_empty() {
-        prepend.push(json!({
-            "domain_suffix": singbox_domains(&profile.block_sites),
-            "action": "reject"
-        }));
-    }
-    if !profile.block_ip.is_empty() {
-        prepend.push(json!({
-            "ip_cidr": singbox_ips(&profile.block_ip),
-            "action": "reject"
-        }));
-    }
-    prepend.retain(|rule| {
-        rule.get("domain_suffix")
-            .and_then(Value::as_array)
-            .map(|items| !items.is_empty())
-            .unwrap_or(true)
-            && rule
-                .get("ip_cidr")
-                .and_then(Value::as_array)
-                .map(|items| !items.is_empty())
-                .unwrap_or(true)
-    });
+    push_singbox_domain_rules(
+        &mut prepend,
+        &mut used_sets,
+        &profile.direct_sites,
+        "direct",
+        rule_sets,
+    );
+    push_singbox_ip_rules(
+        &mut prepend,
+        &mut used_sets,
+        &profile.direct_ip,
+        "direct",
+        rule_sets,
+    );
+    push_singbox_domain_rules(
+        &mut prepend,
+        &mut used_sets,
+        &profile.proxy_sites,
+        "proxy",
+        rule_sets,
+    );
+    push_singbox_ip_rules(
+        &mut prepend,
+        &mut used_sets,
+        &profile.proxy_ip,
+        "proxy",
+        rule_sets,
+    );
+    push_singbox_domain_rules(
+        &mut prepend,
+        &mut used_sets,
+        &profile.block_sites,
+        "reject",
+        rule_sets,
+    );
+    push_singbox_ip_rules(
+        &mut prepend,
+        &mut used_sets,
+        &profile.block_ip,
+        "reject",
+        rule_sets,
+    );
     for rule in prepend.into_iter().rev() {
         rules.insert(0, rule);
+    }
+    if !used_sets.is_empty() {
+        route.insert(
+            "rule_set".into(),
+            json!(used_sets
+                .iter()
+                .map(|set| json!({
+                    "type": "local",
+                    "tag": set.tag,
+                    "path": set.path.display().to_string()
+                }))
+                .collect::<Vec<_>>()),
+        );
     }
     if profile.fake_dns {
         apply_singbox_fakeip(root, profile);
     }
     Ok(())
+}
+
+fn push_singbox_domain_rules<'a>(
+    rules: &mut Vec<Value>,
+    used_sets: &mut Vec<&'a SingboxRuleSet>,
+    sites: &[String],
+    target: &str,
+    rule_sets: &'a [SingboxRuleSet],
+) {
+    let domains = singbox_domains(sites);
+    if !domains.is_empty() {
+        rules.push(singbox_target(json!({ "domain_suffix": domains }), target));
+    }
+    for tag in geosite_tags(sites) {
+        if let Some(set) = rule_sets
+            .iter()
+            .find(|set| set.tag == format!("m3vpn-geosite-{tag}"))
+        {
+            if !used_sets.iter().any(|item| item.tag == set.tag) {
+                used_sets.push(set);
+            }
+            rules.push(singbox_target(json!({ "rule_set": [set.tag] }), target));
+        }
+    }
+}
+
+fn push_singbox_ip_rules<'a>(
+    rules: &mut Vec<Value>,
+    used_sets: &mut Vec<&'a SingboxRuleSet>,
+    ips: &[String],
+    target: &str,
+    rule_sets: &'a [SingboxRuleSet],
+) {
+    let cidrs = singbox_ips(ips);
+    if !cidrs.is_empty() {
+        rules.push(singbox_target(json!({ "ip_cidr": cidrs }), target));
+    }
+    for tag in geoip_tags(ips) {
+        if let Some(set) = rule_sets
+            .iter()
+            .find(|set| set.tag == format!("m3vpn-geoip-{tag}"))
+        {
+            if !used_sets.iter().any(|item| item.tag == set.tag) {
+                used_sets.push(set);
+            }
+            rules.push(singbox_target(json!({ "rule_set": [set.tag] }), target));
+        }
+    }
+}
+
+fn singbox_target(mut rule: Value, target: &str) -> Value {
+    if target == "reject" {
+        rule["action"] = json!("reject");
+    } else {
+        rule["outbound"] = json!(target);
+    }
+    rule
+}
+
+fn geosite_tags(items: &[String]) -> Vec<String> {
+    items
+        .iter()
+        .filter_map(|item| item.strip_prefix("geosite:"))
+        .map(normalize_singbox_geo)
+        .filter(|tag| valid_geo_tag(tag))
+        .collect()
+}
+
+fn geoip_tags(items: &[String]) -> Vec<String> {
+    items
+        .iter()
+        .filter_map(|item| item.strip_prefix("geoip:"))
+        .map(|tag| tag.to_ascii_lowercase())
+        .filter(|tag| valid_geo_tag(tag))
+        .collect()
 }
 
 fn apply_singbox_fakeip(root: &mut Map<String, Value>, profile: &RoutingProfile) {
@@ -819,6 +1133,9 @@ pub fn update_geo(paths: &AppPaths, profile: &RoutingProfile) -> Result<GeoStatu
     };
     download_asset(&client, geoip_url, &paths.geo_dir.join("geoip.dat"))?;
     download_asset(&client, geosite_url, &paths.geo_dir.join("geosite.dat"))?;
+    // sing-box rule-sets are derived from the same upstream data; drop the
+    // cache so the next sing-box backend downloads the refreshed categories.
+    let _ = std::fs::remove_dir_all(paths.geo_dir.join("rulesets"));
     Ok(GeoStatus {
         geoip_bytes: std::fs::metadata(paths.geo_dir.join("geoip.dat"))?.len(),
         geosite_bytes: std::fs::metadata(paths.geo_dir.join("geosite.dat"))?.len(),
@@ -960,11 +1277,194 @@ mod tests {
         });
         let profile = profile_from_value(&value);
         let mut config = json!({ "route": { "rules": [], "final": "proxy" } });
-        apply_singbox(&mut config, &profile).unwrap();
+        apply_singbox(&mut config, &profile, &[]).unwrap();
         let rules = config["route"]["rules"].as_array().unwrap();
         assert_eq!(rules[0]["action"], "sniff");
         assert_eq!(rules[1]["domain_suffix"][0], "example.com");
         assert_eq!(rules[2]["action"], "reject");
+    }
+
+    #[test]
+    #[ignore = "downloads sing-box rule-sets from GitHub"]
+    fn downloads_singbox_rule_sets() {
+        let root = std::env::temp_dir().join(format!("m3vpn-rulesets-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("geo")).unwrap();
+        let paths = AppPaths {
+            data_dir: root.clone(),
+            db_path: root.join("test.db"),
+            log_dir: root.join("logs"),
+            core_dir: root.join("core"),
+            xray_config: root.join("core/xray.json"),
+            xray_log: root.join("core/xray.log"),
+            singbox_config: root.join("core/singbox.json"),
+            singbox_log: root.join("core/singbox.log"),
+            front_config: root.join("core/front.json"),
+            front_log: root.join("core/front.log"),
+            geo_dir: root.join("geo"),
+        };
+        let value = json!({
+            "DirectSites": ["geosite:ru"],
+            "ProxySites": ["geosite:google"],
+            "BlockIp": ["geoip:ru"]
+        });
+        let profile = profile_from_value(&value);
+        let sets = ensure_singbox_rule_sets(&paths, &profile);
+        assert_eq!(sets.len(), 3, "{sets:?}");
+        assert!(sets.iter().all(|set| set.path.exists()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    #[ignore = "requires sidecars and network access"]
+    fn singbox_accepts_downloaded_rule_sets() {
+        let root = std::env::temp_dir().join(format!("m3vpn-ruleset-check-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("geo")).unwrap();
+        let paths = AppPaths {
+            data_dir: root.clone(),
+            db_path: root.join("test.db"),
+            log_dir: root.join("logs"),
+            core_dir: root.join("core"),
+            xray_config: root.join("core/xray.json"),
+            xray_log: root.join("core/xray.log"),
+            singbox_config: root.join("core/singbox.json"),
+            singbox_log: root.join("core/singbox.log"),
+            front_config: root.join("core/front.json"),
+            front_log: root.join("core/front.log"),
+            geo_dir: root.join("geo"),
+        };
+        let value = json!({
+            "DirectSites": ["geosite:ru"],
+            "ProxySites": ["geosite:google"],
+            "BlockIp": ["geoip:ru"]
+        });
+        let profile = profile_from_value(&value);
+        let sets = ensure_singbox_rule_sets(&paths, &profile);
+        assert_eq!(sets.len(), 3);
+        let mut config = json!({
+            "inbounds": [{ "type": "mixed", "tag": "in", "listen": "127.0.0.1", "listen_port": 20808 }],
+            "outbounds": [
+                { "type": "socks", "tag": "proxy", "server": "127.0.0.1", "server_port": 9 },
+                { "type": "direct", "tag": "direct" }
+            ]
+        });
+        apply_singbox(&mut config, &profile, &sets).unwrap();
+        let path = root.join("check.json");
+        std::fs::write(&path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+        let sidecars = crate::sidecars::Sidecars::discover().expect("sidecars");
+        let output = std::process::Command::new(sidecars.singbox())
+            .arg("check")
+            .arg("-c")
+            .arg(&path)
+            .output()
+            .expect("sing-box check");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn builds_tun_dns_from_profile() {
+        let value = json!({
+            "RemoteDNSType": "DoH",
+            "RemoteDNSDomain": "https://dns.google/dns-query",
+            "RemoteDNSIP": "8.8.8.8",
+            "DomesticDNSType": "DoU",
+            "DomesticDNSIP": "77.88.8.8"
+        });
+        let profile = profile_from_value(&value);
+        let servers = tun_dns_servers(&profile);
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0]["type"], "https");
+        assert_eq!(servers[0]["server"], "dns.google");
+        assert_eq!(servers[0]["path"], "/dns-query");
+
+        let value = json!({ "RemoteDNSType": "DoU", "RemoteDNSIP": "9.9.9.9" });
+        let servers = tun_dns_servers(&profile_from_value(&value));
+        assert_eq!(servers[0]["type"], "udp");
+        assert_eq!(servers[0]["server"], "9.9.9.9");
+
+        let value =
+            json!({ "RemoteDNSType": "DoH", "RemoteDNSDomain": "https://1.1.1.1:8443/dns-query" });
+        let servers = tun_dns_servers(&profile_from_value(&value));
+        assert_eq!(servers[0]["server"], "1.1.1.1");
+        assert_eq!(servers[0]["server_port"], 8443);
+    }
+
+    #[test]
+    fn lists_cached_rule_sets() {
+        let root = std::env::temp_dir().join(format!("m3vpn-ruleset-list-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("geo/rulesets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("geosite-category-ru.srs"), b"abc").unwrap();
+        std::fs::write(dir.join("geoip-ru.srs"), b"defg").unwrap();
+        std::fs::write(dir.join("notes.txt"), b"x").unwrap();
+        let paths = AppPaths {
+            data_dir: root.clone(),
+            db_path: root.join("test.db"),
+            log_dir: root.join("logs"),
+            core_dir: root.join("core"),
+            xray_config: root.join("core/xray.json"),
+            xray_log: root.join("core/xray.log"),
+            singbox_config: root.join("core/singbox.json"),
+            singbox_log: root.join("core/singbox.log"),
+            front_config: root.join("core/front.json"),
+            front_log: root.join("core/front.log"),
+            geo_dir: root.join("geo"),
+        };
+        let sets = cached_rule_sets(&paths);
+        assert_eq!(sets.len(), 2);
+        assert_eq!(sets[0].tag, "geoip:ru");
+        assert_eq!(sets[0].bytes, 4);
+        assert_eq!(sets[1].tag, "geosite:category-ru");
+        assert!(sets[1].modified_at.is_some());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn appends_local_rule_sets_for_singbox_geo_tags() {
+        let value = json!({
+            "Name": "Geo",
+            "DirectSites": ["geosite:ru", "direct.example"],
+            "ProxySites": ["geosite:google"],
+            "BlockIp": ["geoip:ru"]
+        });
+        let profile = profile_from_value(&value);
+        let rule_sets = vec![
+            SingboxRuleSet {
+                tag: "m3vpn-geosite-category-ru".into(),
+                path: PathBuf::from("/tmp/geosite-category-ru.srs"),
+            },
+            SingboxRuleSet {
+                tag: "m3vpn-geosite-google".into(),
+                path: PathBuf::from("/tmp/geosite-google.srs"),
+            },
+            SingboxRuleSet {
+                tag: "m3vpn-geoip-ru".into(),
+                path: PathBuf::from("/tmp/geoip-ru.srs"),
+            },
+        ];
+        let mut config = json!({ "route": { "rules": [], "final": "proxy" } });
+        apply_singbox(&mut config, &profile, &rule_sets).unwrap();
+        assert_eq!(config["route"]["rule_set"].as_array().unwrap().len(), 3);
+        let rules = config["route"]["rules"].as_array().unwrap();
+        assert!(rules
+            .iter()
+            .any(|rule| rule["rule_set"][0] == "m3vpn-geosite-category-ru"));
+        assert!(rules
+            .iter()
+            .any(|rule| rule["rule_set"][0] == "m3vpn-geosite-google"));
+        assert!(rules
+            .iter()
+            .any(|rule| rule["rule_set"][0] == "m3vpn-geoip-ru"));
+        assert!(rules
+            .iter()
+            .any(|rule| rule["domain_suffix"][0] == "direct.example"));
     }
 
     #[test]
@@ -977,7 +1477,7 @@ mod tests {
         });
         let profile = profile_from_value(&value);
         let mut config = json!({ "route": { "rules": [], "final": "proxy" } });
-        apply_singbox(&mut config, &profile).unwrap();
+        apply_singbox(&mut config, &profile, &[]).unwrap();
         let servers = config["dns"]["servers"].as_array().unwrap();
         assert_eq!(servers[0]["tag"], "m3vpn-dns");
         assert_eq!(servers[0]["server"], "9.9.9.9");
@@ -995,7 +1495,7 @@ mod tests {
         let value = json!({ "Name": "NoFake", "FakeDNS": true, "ProxyIp": ["1.2.3.0/24"] });
         let profile = profile_from_value(&value);
         let mut config = json!({ "route": { "rules": [], "final": "proxy" } });
-        apply_singbox(&mut config, &profile).unwrap();
+        apply_singbox(&mut config, &profile, &[]).unwrap();
         assert!(config.get("dns").is_none());
     }
 

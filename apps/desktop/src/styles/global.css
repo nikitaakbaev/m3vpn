@@ -1730,10 +1730,9 @@ input[type="number"]::-webkit-inner-spin-button {
 /* --------------------------------------------------------------- settings */
 
 .settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: start;
 }
 
 .settings-card {
@@ -2202,6 +2201,27 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .geo-card__body {
   min-width: 0;
+}
+
+.rule-set-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.rule-set-chips__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-right: 2px;
+}
+
+.rule-set-chips .chip {
+  font-size: 11px;
+  padding: 2px 8px;
 }
 
 .geo-controls {

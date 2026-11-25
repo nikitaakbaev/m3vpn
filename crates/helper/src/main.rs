@@ -24,6 +24,8 @@ enum Request {
         socks_port: u16,
         #[serde(default)]
         kill_switch: bool,
+        #[serde(default)]
+        dns: Vec<Value>,
     },
     StopTun,
     Status,
@@ -156,6 +158,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             front_pid,
             socks_port,
             kill_switch,
+            dns,
         } => start_tun(
             &state,
             &run_dir,
@@ -163,6 +166,7 @@ fn handle_connection(stream: UnixStream, state: Shared, run_dir: PathBuf) -> Res
             front_pid,
             socks_port,
             kill_switch,
+            &dns,
         ),
         Request::StopTun => stop_tun(&state, &run_dir),
         Request::Status => {
@@ -192,6 +196,7 @@ fn start_tun(
     front_pid: Option<u32>,
     socks_port: u16,
     kill_switch: bool,
+    dns: &[Value],
 ) -> Result<Response> {
     {
         let session = state
@@ -218,7 +223,7 @@ fn start_tun(
     let config_path = run_dir.join("tun.json");
     fs::write(
         &config_path,
-        serde_json::to_string_pretty(&tun_config(socks_port))?,
+        serde_json::to_string_pretty(&tun_config(socks_port, dns))?,
     )?;
     set_mode(&config_path, 0o600)?;
 
@@ -492,17 +497,13 @@ fn wait_for_interface(child: &mut Child, run_dir: &Path) -> Result<()> {
     }
 }
 
-fn tun_config(socks_port: u16) -> Value {
+fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
+    let (dns_servers, dns_final) = tun_dns_servers(dns);
     json!({
         "log": { "level": "warn", "timestamp": true },
         "dns": {
-            "servers": [{
-                "tag": "dns",
-                "type": "udp",
-                "server": "1.1.1.1",
-                "detour": "proxy"
-            }],
-            "final": "dns"
+            "servers": dns_servers,
+            "final": dns_final
         },
         "inbounds": [{
             "type": "tun",
@@ -533,6 +534,47 @@ fn tun_config(socks_port: u16) -> Value {
             "auto_detect_interface": true
         }
     })
+}
+
+/// Builds the DNS section for the TUN core. The app may pass DoH/DoU servers
+/// from the active routing profile; a proxied UDP bootstrap resolves their
+/// hostnames without leaking queries. Invalid entries are ignored so a broken
+/// profile can never prevent TUN from starting.
+fn tun_dns_servers(dns: &[Value]) -> (Vec<Value>, String) {
+    let mut servers = vec![json!({
+        "tag": "dns-bootstrap",
+        "type": "udp",
+        "server": "1.1.1.1",
+        "detour": "proxy"
+    })];
+    let mut final_tag = "dns-bootstrap".to_string();
+    for (index, raw) in dns.iter().enumerate() {
+        let Some(object) = raw.as_object() else {
+            continue;
+        };
+        let kind = object.get("type").and_then(Value::as_str).unwrap_or("udp");
+        if !matches!(kind, "udp" | "tcp" | "tls" | "https" | "quic") {
+            continue;
+        }
+        let Some(server) = object.get("server").and_then(Value::as_str) else {
+            continue;
+        };
+        if server.is_empty() {
+            continue;
+        }
+        let tag = format!("dns-{index}");
+        let mut value = object.clone();
+        value.insert("tag".into(), json!(tag));
+        value.insert("detour".into(), json!("proxy"));
+        if server.parse::<std::net::IpAddr>().is_err() {
+            value.insert("domain_resolver".into(), json!("dns-bootstrap"));
+        }
+        servers.push(Value::Object(value));
+        if index == 0 {
+            final_tag = tag;
+        }
+    }
+    (servers, final_tag)
 }
 
 fn apply_kill_switch() -> Result<()> {
@@ -740,12 +782,62 @@ mod tests {
 
     #[test]
     fn tun_config_routes_through_front_socks() {
-        let config = tun_config(10808);
+        let config = tun_config(10808, &[]);
         assert_eq!(config["inbounds"][0]["type"], "tun");
         assert_eq!(config["inbounds"][0]["interface_name"], IFACE);
         assert_eq!(config["outbounds"][0]["type"], "socks");
         assert_eq!(config["outbounds"][0]["server_port"], 10808);
         assert_eq!(config["route"]["final"], "proxy");
+        assert_eq!(config["dns"]["final"], "dns-bootstrap");
+    }
+
+    #[test]
+    fn tun_config_uses_profile_dns() {
+        let dns = vec![
+            json!({ "type": "https", "server": "cloudflare-dns.com", "path": "/dns-query" }),
+            json!({ "type": "udp", "server": "9.9.9.9" }),
+            json!({ "type": "bogus", "server": "1.0.0.1" }),
+        ];
+        let config = tun_config(10808, &dns);
+        let servers = config["dns"]["servers"].as_array().unwrap();
+        assert_eq!(servers.len(), 3);
+        assert_eq!(config["dns"]["final"], "dns-0");
+        assert_eq!(servers[1]["domain_resolver"], "dns-bootstrap");
+        assert_eq!(servers[1]["detour"], "proxy");
+        assert_eq!(servers[2]["server"], "9.9.9.9");
+        assert!(servers[2].get("domain_resolver").is_none());
+    }
+
+    #[test]
+    #[ignore = "requires the sing-box sidecar"]
+    fn tun_config_is_valid_for_singbox() {
+        let dns = vec![
+            json!({ "type": "https", "server": "cloudflare-dns.com", "path": "/dns-query" }),
+            json!({ "type": "udp", "server": "9.9.9.9" }),
+        ];
+        let config = tun_config(10808, &dns);
+        let dir = std::env::temp_dir().join(format!("m3vpn-tun-check-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("tun.json");
+        std::fs::write(&path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+        let binary = std::env::var("M3VPN_SINGBOX")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../sidecars/bin/hiddify-sing-box")
+            });
+        let output = Command::new(binary)
+            .arg("check")
+            .arg("-c")
+            .arg(&path)
+            .output()
+            .expect("sing-box check");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

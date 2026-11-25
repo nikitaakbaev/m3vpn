@@ -171,6 +171,7 @@ pub fn run() {
             commands::delete_routing_profile,
             commands::activate_routing_profile,
             commands::refresh_routing_geo,
+            commands::routing_rule_sets,
             commands::refresh_routing_geo_if_due,
             commands::check_update,
             commands::open_external,

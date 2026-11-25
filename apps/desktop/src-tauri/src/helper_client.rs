@@ -34,13 +34,15 @@ impl HelperClient {
         front_pid: Option<u32>,
         socks_port: u16,
         kill_switch: bool,
+        dns: &[Value],
     ) -> Result<()> {
         self.call(json!({
             "cmd": "start_tun",
             "app_pid": app_pid,
             "front_pid": front_pid,
             "socks_port": socks_port,
-            "kill_switch": kill_switch
+            "kill_switch": kill_switch,
+            "dns": dns
         }))
         .map(|_| ())
     }

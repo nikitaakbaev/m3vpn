@@ -249,12 +249,17 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
             routing::active(&db).map_err(|error| error.to_string())?
         };
         let singbox = m3vpn_parser::uses_singbox(&details.protocol);
-        if let Some((_, profile)) = active_profile {
+        let tun_dns = active_profile
+            .as_ref()
+            .map(|(_, profile)| routing::tun_dns_servers(profile))
+            .unwrap_or_default();
+        if let Some((_, profile)) = &active_profile {
             if singbox {
-                routing::apply_singbox(&mut config, &profile)
+                let rule_sets = routing::ensure_singbox_rule_sets(&state.paths, profile);
+                routing::apply_singbox(&mut config, profile, &rule_sets)
                     .map_err(|error| format!("маршрутизация: {error:#}"))?;
             } else {
-                routing::apply_xray(&mut config, &profile)
+                routing::apply_xray(&mut config, profile)
                     .map_err(|error| format!("маршрутизация: {error:#}"))?;
             }
         }
@@ -288,6 +293,7 @@ pub async fn connect_server(app: AppHandle, server_id: String) -> Result<Connect
                 front_pid,
                 status.socks_port,
                 kill_switch,
+                &tun_dns,
             ) {
                 core::disconnect(&state.core, &state.paths);
                 return Err(format!("TUN helper: {error:#}"));
@@ -435,6 +441,11 @@ pub fn activate_routing_profile(state: State<'_, AppState>, id: String) -> Resul
         .lock()
         .map_err(|_| "database lock poisoned".to_string())?;
     routing::set_active(&db, &id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn routing_rule_sets(state: State<'_, AppState>) -> Vec<routing::RuleSetStatus> {
+    routing::cached_rule_sets(&state.paths)
 }
 
 #[tauri::command]

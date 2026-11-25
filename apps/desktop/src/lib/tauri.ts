@@ -63,6 +63,12 @@ export interface RoutingSummary {
   profileJson: string;
 }
 
+export interface RuleSetStatus {
+  tag: string;
+  bytes: number;
+  modifiedAt: number | null;
+}
+
 export interface GeoStatus {
   geoipBytes: number;
   geositeBytes: number;
@@ -475,6 +481,16 @@ export async function refreshRoutingGeo(profileId?: string): Promise<GeoStatus> 
     return { geoipBytes: 16_503_149, geositeBytes: 11_531_643, checkedAt: now };
   }
   return invoke<GeoStatus>("refresh_routing_geo", { profileId: profileId ?? null });
+}
+
+export async function listRoutingRuleSets(): Promise<RuleSetStatus[]> {
+  if (!isTauri) {
+    return [
+      { tag: "geosite:category-ru", bytes: 8996, modifiedAt: now },
+      { tag: "geoip:ru", bytes: 50098, modifiedAt: now },
+    ];
+  }
+  return invoke<RuleSetStatus[]>("routing_rule_sets");
 }
 
 export async function refreshRoutingGeoIfDue(): Promise<GeoStatus | null> {

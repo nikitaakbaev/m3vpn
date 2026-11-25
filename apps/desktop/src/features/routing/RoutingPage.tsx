@@ -5,7 +5,7 @@ import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { Icon } from "../../components/Icon";
 import { useAppStore, useT } from "../../store/useAppStore";
-import { formatDate } from "../../lib/format";
+import { formatBytes, formatDate } from "../../lib/format";
 
 export function RoutingPage() {
   const t = useT();
@@ -17,6 +17,7 @@ export function RoutingPage() {
   const deleteRouting = useAppStore((state) => state.deleteRouting);
   const activateRouting = useAppStore((state) => state.activateRouting);
   const refreshGeo = useAppStore((state) => state.refreshGeo);
+  const ruleSets = useAppStore((state) => state.routingRuleSets);
   const settings = useAppStore((state) => state.settings);
   const setSetting = useAppStore((state) => state.set);
 
@@ -106,6 +107,20 @@ export function RoutingPage() {
         <div className="geo-card__body">
           <strong>{t("routing.geoTitle")}</strong>
           <p>{t("routing.geoText")}</p>
+          {ruleSets.length > 0 && (
+            <div className="rule-set-chips" aria-label={t("routing.ruleSets")}>
+              <span className="rule-set-chips__label">{t("routing.ruleSets")}</span>
+              {ruleSets.map((set) => (
+                <span
+                  key={set.tag}
+                  className="chip"
+                  title={`${formatBytes(set.bytes)} · ${formatDate(set.modifiedAt ?? undefined)}`}
+                >
+                  {set.tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="geo-controls">
           <label className="geo-controls__interval">

@@ -23,6 +23,7 @@ interface AppStore {
   status: api.ConnectionStatus;
   core: api.CoreInfo | null;
   routingProfiles: api.RoutingSummary[];
+  routingRuleSets: api.RuleSetStatus[];
   routingBusy: boolean;
   updateInfo: api.UpdateInfo | null;
   updateBusy: boolean;
@@ -93,6 +94,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   status: EMPTY_STATUS,
   core: null,
   routingProfiles: [],
+  routingRuleSets: [],
   routingBusy: false,
   updateInfo: null,
   updateBusy: false,
@@ -487,8 +489,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   loadRouting: async () => {
     try {
-      const routingProfiles = await api.listRoutingProfiles();
-      set({ routingProfiles });
+      const [routingProfiles, routingRuleSets] = await Promise.all([
+        api.listRoutingProfiles(),
+        api.listRoutingRuleSets(),
+      ]);
+      set({ routingProfiles, routingRuleSets });
     } catch (error) {
       set({ lastError: String(error) });
     }
