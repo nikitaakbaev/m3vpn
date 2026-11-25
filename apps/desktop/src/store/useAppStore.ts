@@ -197,8 +197,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setServerExcluded: async (serverId, excluded) => {
     try {
+      const before = get();
+      const wasConnected = before.status.running && before.status.serverId === serverId;
+      const wasSelected = !before.status.running && before.selectedServerId === serverId;
       await api.setServerExcluded(serverId, excluded);
       await get().refreshData();
+      const state = get();
+      // Excluding the active server must not leave auto mode stuck on it.
+      // Connected: switch to the fastest eligible server. Idle: select it.
+      if (
+        excluded &&
+        (wasConnected || wasSelected) &&
+        state.settings["select.mode"] !== "manual" &&
+        state.settings["ping.enabled"] !== "false"
+      ) {
+        await get().probeAll(wasConnected, true);
+      }
     } catch (error) {
       set({ lastError: String(error) });
     }
@@ -385,7 +399,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           get().selectServer(best.serverId);
         } else if (best.serverId !== current?.id && clearlyBetter) {
           const wins = state.autoCandidateId === best.serverId ? state.autoCandidateWins + 1 : 1;
-          if (wins >= winsRequired) {
+          if (current?.excluded || wins >= winsRequired) {
             set({ autoCandidateId: null, autoCandidateWins: 0 });
             await get().connect(best.serverId);
             const bestServer = state.servers.find((server) => server.id === best.serverId);
