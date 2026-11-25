@@ -35,7 +35,10 @@ front → remote → TUN → front → remote → ...
 - `start_tun` проверяет, что front/backend находятся в cgroup приложения;
 - helper отказывается маркировать слишком широкую cgroup (`user@...service`),
   чтобы не завернуть в обход TUN все процессы пользователя;
-- netns-тест проверяет и cgroup-правило, и fwmark.
+- TUN DNS по умолчанию — DoH через TCP, поэтому не зависит от UDP в
+  прокси-цепочке;
+- netns-тест проверяет и cgroup-правило, и fwmark; live smoke дополнительно
+  проверяет DNS и HTTP.
 
 Удаление:
 

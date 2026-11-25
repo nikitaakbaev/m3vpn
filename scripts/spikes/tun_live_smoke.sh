@@ -14,6 +14,8 @@ if [[ "${M3VPN_TUN_SMOKE:-0}" != "1" ]]; then
   exit 2
 fi
 
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
 HELPER="${M3VPN_HELPER_BIN:-/usr/lib/m3vpn/m3vpn-helper}"
 SOCKET="${M3VPN_HELPER_SOCKET:-/run/m3vpn/helper.sock}"
 [[ -x "$HELPER" ]] || { echo "missing helper: $HELPER" >&2; exit 1; }
@@ -28,7 +30,7 @@ KILL_SWITCH="${M3VPN_TUN_KILL_SWITCH:-0}"
 [[ -n "$FRONT_PID" ]] || { echo "front proxy is not running" >&2; exit 1; }
 [[ -n "$BACKEND_PID" ]] || { echo "proxy backend is not running (connect first)" >&2; exit 1; }
 
-trap '"$HELPER" stop >/dev/null 2>&1 || true' EXIT
+trap '"$HELPER" stop >/dev/null 2>&1 || true; rm -rf "$WORK"' EXIT
 
 echo "app=$APP_PID front=$FRONT_PID backend=$BACKEND_PID socks=$SOCKS_PORT kill_switch=$KILL_SWITCH"
 args=(start-tun --app-pid "$APP_PID" --front-pid "$FRONT_PID" --proxy-pid "$FRONT_PID" --proxy-pid "$BACKEND_PID" --socks-port "$SOCKS_PORT")
@@ -43,14 +45,15 @@ ip link show m3vpn0 >/dev/null
 echo "TUN interface:"
 ip -brief addr show m3vpn0
 
-if ! ip rule show | grep -q "fwmark 0x2022 lookup main"; then
+ip rule show > "$WORK/rules.current"
+if ! grep -q "fwmark 0x2022 lookup main" "$WORK/rules.current"; then
   echo "front bypass mark rule missing" >&2
   exit 1
 fi
-ip rule show | grep -E '8999|900[0-9]|9010' || true
+grep -E '8999|900[0-9]|9010' "$WORK/rules.current" || true
 
 echo "route:"; ip route get 1.1.1.1 || true
-echo "DNS:"; getent hosts example.com | head -2
+echo "DNS:"; timeout 15 getent hosts example.com | sed -n '1,2p'
 echo "HTTP via TUN:"; curl -fsS --max-time 20 https://api.ipify.org; echo
 if getent ahostsv6 example.com >/dev/null 2>&1; then
   echo "IPv6 HTTP:"
@@ -58,17 +61,20 @@ if getent ahostsv6 example.com >/dev/null 2>&1; then
 fi
 if [[ "$KILL_SWITCH" == "1" ]]; then
   echo "kill switch:"
-  nft list table inet m3vpn | head -20
+  nft list table inet m3vpn > "$WORK/killswitch" 2>/dev/null || true
+  sed -n '1,20p' "$WORK/killswitch"
 fi
 
 "$HELPER" stop
 trap - EXIT
+rm -rf "$WORK"
 
 if ip link show m3vpn0 >/dev/null 2>&1; then
   echo "m3vpn0 still exists after stop" >&2
   exit 1
 fi
-if ip rule show | grep -qE 'fwmark 0x2022|8999|900[0-9]|9010'; then
+ip rule show > "$WORK/rules.after-stop"
+if grep -qE 'fwmark 0x2022|8999|900[0-9]|9010' "$WORK/rules.after-stop"; then
   echo "policy rules were not cleaned up" >&2
   exit 1
 fi

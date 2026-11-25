@@ -662,8 +662,10 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
 fn tun_dns_servers(dns: &[Value]) -> (Vec<Value>, String) {
     let mut servers = vec![json!({
         "tag": "dns-bootstrap",
-        "type": "udp",
+        "type": "https",
         "server": "1.1.1.1",
+        "path": "/dns-query",
+        "tls": { "server_name": "cloudflare-dns.com" },
         "detour": "proxy"
     })];
     let mut final_tag = "dns-bootstrap".to_string();
@@ -916,6 +918,7 @@ mod tests {
         assert_eq!(config["route"]["final"], "proxy");
         assert_eq!(config["route"]["default_mark"], 0x2022);
         assert_eq!(config["dns"]["final"], "dns-bootstrap");
+        assert_eq!(config["dns"]["servers"][0]["type"], "https");
     }
 
     #[test]

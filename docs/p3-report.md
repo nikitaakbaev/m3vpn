@@ -37,7 +37,9 @@
 - `DoH` → `{ "type": "https", "server": "...", "path": "/dns-query" }`;
 - `DoU` / IP → `{ "type": "udp", "server": "..." }`;
 - `tls://` и `quic://` поддерживаются как `tls` / `quic`;
-- helper всегда добавляет `dns-bootstrap` — UDP `1.1.1.1` через SOCKS;
+- helper всегда добавляет `dns-bootstrap` — DoH `1.1.1.1` с SNI
+  `cloudflare-dns.com` через SOCKS; DNS идёт по TCP, поэтому работает даже
+  если прокси-цепочка не поддерживает UDP;
 - если DNS-сервер задан доменом, helper ставит ему
   `domain_resolver: dns-bootstrap`, поэтому bootstrap-запрос идёт через
   прокси и не утекает;
