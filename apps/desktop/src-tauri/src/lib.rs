@@ -157,6 +157,8 @@ pub fn run() {
             commands::list_profiles,
             commands::list_servers,
             commands::delete_profile,
+            commands::set_server_favorite,
+            commands::set_server_tags,
             commands::refresh_profile,
             commands::probe_servers,
             commands::set_servers_excluded,

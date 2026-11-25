@@ -129,6 +129,7 @@ pub fn probe_all(
         for result in &results {
             store::update_latency(&db, &result.server_id, result.latency_ms, result.ok, now)?;
         }
+        store::prune_ping_samples(&db, now - 7 * 24 * 60 * 60)?;
     }
 
     Ok(results)

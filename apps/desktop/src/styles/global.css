@@ -1477,6 +1477,52 @@ input[type="number"]::-webkit-inner-spin-button {
   white-space: nowrap;
 }
 
+.server-row__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.tag-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--m3-accent) 9%, transparent);
+  color: var(--m3-accent);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.server-row__latency {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.ping-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--m3-accent);
+  opacity: 0.8;
+}
+
+.ping-history__loss {
+  color: var(--md-sys-color-error);
+  font-size: 10px;
+}
+
+.icon-button.is-favorite {
+  color: #fbbf24;
+}
+
+@media (max-width: 1100px) {
+  .ping-history {
+    display: none;
+  }
+}
+
 .engine-badge {
   display: inline-flex;
   align-items: center;

@@ -209,6 +209,32 @@ pub async fn refresh_profile(app: AppHandle, profile_id: String) -> Result<Impor
 }
 
 #[tauri::command]
+pub fn set_server_favorite(
+    state: State<'_, AppState>,
+    server_id: String,
+    favorite: bool,
+) -> Result<(), String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())?;
+    crate::store::set_server_favorite(&db, &server_id, favorite).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_server_tags(
+    state: State<'_, AppState>,
+    server_id: String,
+    tags: Vec<String>,
+) -> Result<(), String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())?;
+    crate::store::set_server_tags(&db, &server_id, &tags).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn delete_profile(state: State<'_, AppState>, profile_id: String) -> Result<(), String> {
     let db = state
         .db

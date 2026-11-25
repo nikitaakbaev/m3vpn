@@ -48,6 +48,8 @@ interface AppStore {
   selectServer: (serverId: string) => void;
   setServerExcluded: (serverId: string, excluded: boolean) => Promise<boolean>;
   setServersExcluded: (serverIds: string[], excluded: boolean) => Promise<boolean>;
+  setServerFavorite: (serverId: string, favorite: boolean) => Promise<void>;
+  setServerTags: (serverId: string, tags: string[]) => Promise<void>;
   connect: (serverId?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   importSubscription: (url: string, name?: string) => Promise<api.ImportSummary>;
@@ -249,6 +251,41 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (error) {
       set({ lastError: String(error) });
       return false;
+    }
+  },
+
+  setServerFavorite: async (serverId, favorite) => {
+    const before = get().servers;
+    set({
+      servers: before.map((server) =>
+        server.id === serverId ? { ...server, favorite } : server,
+      ),
+    });
+    try {
+      await api.setServerFavorite(serverId, favorite);
+    } catch (error) {
+      set({ servers: before, lastError: String(error) });
+    }
+  },
+
+  setServerTags: async (serverId, tags) => {
+    const before = get().servers;
+    const clean = [
+      ...new Set(
+        tags
+          .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
+          .filter(Boolean),
+      ),
+    ].slice(0, 8);
+    set({
+      servers: before.map((server) =>
+        server.id === serverId ? { ...server, tags: clean } : server,
+      ),
+    });
+    try {
+      await api.setServerTags(serverId, clean);
+    } catch (error) {
+      set({ servers: before, lastError: String(error) });
     }
   },
 

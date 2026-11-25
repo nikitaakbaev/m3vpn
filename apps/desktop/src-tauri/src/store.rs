@@ -119,6 +119,7 @@ fn migrate(conn: &Connection) -> Result<()> {
             raw_conf         TEXT,
             full_config_json TEXT,
             enabled          INTEGER NOT NULL DEFAULT 1,
+            favorite         INTEGER NOT NULL DEFAULT 0,
             sort_index       INTEGER NOT NULL DEFAULT 0,
             latency_ms       INTEGER,
             latency_ok       INTEGER,
@@ -134,6 +135,12 @@ fn migrate(conn: &Connection) -> Result<()> {
             created_at  INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS server_tags (
+            server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+            tag       TEXT NOT NULL,
+            PRIMARY KEY (server_id, tag)
+        );
+
         CREATE TABLE IF NOT EXISTS ping_samples (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             server_id  TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
@@ -144,6 +151,7 @@ fn migrate(conn: &Connection) -> Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_ping_server_ts ON ping_samples(server_id, ts DESC);
+        CREATE INDEX IF NOT EXISTS idx_ping_ts ON ping_samples(ts);
 
         CREATE TABLE IF NOT EXISTS traffic_daily (
             day      TEXT PRIMARY KEY,
@@ -160,6 +168,27 @@ fn migrate(conn: &Connection) -> Result<()> {
         );
         "#,
     )?;
+    ensure_column(
+        conn,
+        "servers",
+        "favorite",
+        "ALTER TABLE servers ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
+    )?;
+    Ok(())
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, ddl: &str) -> Result<()> {
+    let exists = conn
+        .query_row(
+            &format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1"),
+            [column],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !exists {
+        conn.execute(ddl, [])?;
+    }
     Ok(())
 }
 
@@ -305,6 +334,14 @@ pub struct ProfileRow {
     pub url_present: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PingSample {
+    pub ts: i64,
+    pub latency_ms: Option<i64>,
+    pub ok: bool,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerRow {
@@ -319,6 +356,11 @@ pub struct ServerRow {
     pub enabled: bool,
     pub excluded: bool,
     pub latency_ms: Option<i64>,
+    pub favorite: bool,
+    pub tags: Vec<String>,
+    pub history: Vec<PingSample>,
+    pub jitter_ms: Option<f64>,
+    pub loss_percent: f64,
 }
 
 pub fn save_import(conn: &Connection, profile: &NewProfile, servers: &[NewServer]) -> Result<()> {
@@ -416,7 +458,7 @@ pub fn list_profiles(conn: &Connection) -> Result<Vec<ProfileRow>> {
 pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<ServerRow>> {
     let mut stmt = conn.prepare(
         "SELECT s.id, s.profile_id, p.name, s.name, s.protocol, s.host, s.port,
-                s.enabled, s.latency_ms
+                s.enabled, s.favorite, s.latency_ms
          FROM servers s
          JOIN profiles p ON p.id = s.profile_id
          WHERE (?1 IS NULL OR s.profile_id = ?1)
@@ -440,7 +482,12 @@ pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<S
             port: row.get::<_, Option<i64>>(6)?.map(|port| port as u16),
             enabled: row.get::<_, i64>(7)? != 0,
             excluded: false,
-            latency_ms: row.get(8)?,
+            latency_ms: row.get(9)?,
+            favorite: row.get::<_, i64>(8)? != 0,
+            tags: Vec::new(),
+            history: Vec::new(),
+            jitter_ms: None,
+            loss_percent: 0.0,
         })
     })?;
     let mut result = Vec::new();
@@ -448,6 +495,9 @@ pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<S
         result.push(row?);
     }
     let exclusions = excluded_fingerprints(conn)?;
+    let mut tags = server_tags(conn)?;
+    let since = now_secs() - 6 * 60 * 60;
+    let mut history = recent_ping_history(conn, since, 20)?;
     for row in &mut result {
         row.excluded = exclusions.contains(&server_fingerprint(
             &row.protocol,
@@ -455,8 +505,115 @@ pub fn list_servers(conn: &Connection, profile_id: Option<&str>) -> Result<Vec<S
             row.port,
             &row.name,
         ));
+        row.tags = tags.remove(&row.id).unwrap_or_default();
+        row.history = history.remove(&row.id).unwrap_or_default();
+        let (jitter, loss) = ping_stats(&row.history);
+        row.jitter_ms = jitter;
+        row.loss_percent = loss;
     }
     Ok(result)
+}
+
+fn server_tags(conn: &Connection) -> Result<HashMap<String, Vec<String>>> {
+    let mut stmt = conn.prepare("SELECT server_id, tag FROM server_tags ORDER BY tag")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut result: HashMap<String, Vec<String>> = HashMap::new();
+    for row in rows {
+        let (server_id, tag) = row?;
+        result.entry(server_id).or_default().push(tag);
+    }
+    Ok(result)
+}
+
+fn recent_ping_history(
+    conn: &Connection,
+    since: i64,
+    limit: i64,
+) -> Result<HashMap<String, Vec<PingSample>>> {
+    let mut stmt = conn.prepare(
+        "SELECT server_id, ts, latency_ms, ok FROM (
+             SELECT server_id, ts, latency_ms, ok,
+                    ROW_NUMBER() OVER (PARTITION BY server_id ORDER BY ts DESC) AS rn
+             FROM ping_samples
+             WHERE ts >= ?1
+         ) WHERE rn <= ?2
+         ORDER BY server_id, ts ASC",
+    )?;
+    let rows = stmt.query_map(params![since, limit], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            PingSample {
+                ts: row.get(1)?,
+                latency_ms: row.get(2)?,
+                ok: row.get::<_, i64>(3)? != 0,
+            },
+        ))
+    })?;
+    let mut result: HashMap<String, Vec<PingSample>> = HashMap::new();
+    for row in rows {
+        let (server_id, sample) = row?;
+        result.entry(server_id).or_default().push(sample);
+    }
+    Ok(result)
+}
+
+fn ping_stats(samples: &[PingSample]) -> (Option<f64>, f64) {
+    if samples.is_empty() {
+        return (None, 0.0);
+    }
+    let total = samples.len() as f64;
+    let ok_count = samples.iter().filter(|sample| sample.ok).count() as f64;
+    let loss = round1((total - ok_count) / total * 100.0);
+    let latencies: Vec<f64> = samples
+        .iter()
+        .filter(|sample| sample.ok)
+        .filter_map(|sample| sample.latency_ms.map(|value| value as f64))
+        .collect();
+    let jitter = if latencies.len() >= 2 {
+        let sum: f64 = latencies
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .sum();
+        Some(round1(sum / (latencies.len() - 1) as f64))
+    } else {
+        None
+    };
+    (jitter, loss)
+}
+
+fn round1(value: f64) -> f64 {
+    (value * 10.0).round() / 10.0
+}
+
+pub fn set_server_favorite(conn: &Connection, server_id: &str, favorite: bool) -> Result<()> {
+    conn.execute(
+        "UPDATE servers SET favorite = ?1, updated_at = ?2 WHERE id = ?3",
+        params![favorite as i64, now_secs(), server_id],
+    )?;
+    Ok(())
+}
+
+pub fn set_server_tags(conn: &Connection, server_id: &str, tags: &[String]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM server_tags WHERE server_id = ?1", [server_id])?;
+    let mut clean: Vec<String> = tags
+        .iter()
+        .map(|tag| tag.trim().trim_start_matches('#').to_lowercase())
+        .filter(|tag| !tag.is_empty() && tag.chars().count() <= 32)
+        .collect();
+    clean.sort();
+    clean.dedup();
+    clean.truncate(8);
+    for tag in clean {
+        tx.execute(
+            "INSERT INTO server_tags(server_id, tag) VALUES (?1, ?2)",
+            params![server_id, tag],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn set_servers_excluded(
@@ -568,6 +725,20 @@ pub fn update_latency(
             server_id
         ],
     )?;
+    conn.execute(
+        "INSERT INTO ping_samples(server_id, ts, latency_ms, ok) VALUES (?1, ?2, ?3, ?4)",
+        params![
+            server_id,
+            at,
+            latency_ms.map(|value| value as i64),
+            ok as i64
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn prune_ping_samples(conn: &Connection, before: i64) -> Result<()> {
+    conn.execute("DELETE FROM ping_samples WHERE ts < ?1", [before])?;
     Ok(())
 }
 
@@ -603,6 +774,62 @@ mod tests {
         set(&conn, "mode", "tun").unwrap();
         assert_eq!(get(&conn, "mode").unwrap().as_deref(), Some("tun"));
         assert!(all(&conn).unwrap().contains_key("proxy.active_port"));
+
+        drop(conn);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), suffix));
+        }
+    }
+
+    #[test]
+    fn favorites_tags_and_ping_history() {
+        let path = std::env::temp_dir().join(format!("m3vpn-p2-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let conn = open(&path).expect("open test database");
+        let profile = NewProfile {
+            id: "p2".into(),
+            name: "Test".into(),
+            url: String::new(),
+            url_hidden: true,
+            title: None,
+            description: None,
+            support_url: None,
+            web_page_url: None,
+            update_interval_hours: 24,
+            userinfo: None,
+            created_at: 1,
+            updated_at: 1,
+        };
+        let server = NewServer {
+            id: "p2:0".into(),
+            profile_id: "p2".into(),
+            name: "Server".into(),
+            protocol: "vless".into(),
+            host: Some("example.com".into()),
+            port: Some(443),
+            params_json: None,
+            full_config_json: "{}".into(),
+            sort_index: 0,
+        };
+        save_import(&conn, &profile, &[server]).expect("save");
+        set_server_favorite(&conn, "p2:0", true).expect("favorite");
+        set_server_tags(
+            &conn,
+            "p2:0",
+            &["#Work".into(), " home ".into(), "work".into()],
+        )
+        .expect("tags");
+        let now = now_secs();
+        update_latency(&conn, "p2:0", Some(100), true, now - 2).unwrap();
+        update_latency(&conn, "p2:0", Some(120), true, now - 1).unwrap();
+        update_latency(&conn, "p2:0", None, false, now).unwrap();
+
+        let row = list_servers(&conn, None).unwrap().remove(0);
+        assert!(row.favorite);
+        assert_eq!(row.tags, vec!["home".to_string(), "work".to_string()]);
+        assert_eq!(row.history.len(), 3);
+        assert_eq!(row.loss_percent, 33.3);
+        assert_eq!(row.jitter_ms, Some(20.0));
 
         drop(conn);
         for suffix in ["", "-wal", "-shm"] {

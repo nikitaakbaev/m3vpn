@@ -26,6 +26,12 @@ export interface Profile {
   urlPresent: boolean;
 }
 
+export interface PingSample {
+  ts: number;
+  latencyMs: number | null;
+  ok: boolean;
+}
+
 export interface Server {
   id: string;
   profileId: string;
@@ -38,6 +44,11 @@ export interface Server {
   enabled: boolean;
   excluded: boolean;
   latencyMs: number | null;
+  favorite: boolean;
+  tags: string[];
+  history: PingSample[];
+  jitterMs: number | null;
+  lossPercent: number;
 }
 
 export interface ConnectionStatus {
@@ -244,6 +255,15 @@ let mockServers: Server[] = [
   enabled: true,
   excluded: false,
   latencyMs: [38, 52, 63, 71, 88, 120][index] ?? null,
+  favorite: index === 0,
+  tags: index === 0 ? ["work"] : index === 1 ? ["home"] : [],
+  history: Array.from({ length: 12 }, (_, sample) => ({
+    ts: now - (11 - sample) * 60,
+    latencyMs: ([38, 52, 63, 71, 88, 120][index] ?? 80) + (sample % 3) * 2,
+    ok: true,
+  })),
+  jitterMs: index === 0 ? 4 : 6,
+  lossPercent: index === 5 ? 16.7 : 0,
 }));
 
 mockServers.push({
@@ -258,6 +278,15 @@ mockServers.push({
   enabled: true,
   excluded: false,
   latencyMs: 118,
+  favorite: false,
+  tags: ["mobile"],
+  history: Array.from({ length: 12 }, (_, sample) => ({
+    ts: now - (11 - sample) * 60,
+    latencyMs: 118 + (sample % 4) * 3,
+    ok: true,
+  })),
+  jitterMs: 6,
+  lossPercent: 0,
 });
 
 let mockStatus: ConnectionStatus = {
@@ -377,6 +406,11 @@ export async function importConfig(text: string, name?: string): Promise<ImportS
         enabled: true,
         excluded: false,
         latencyMs: null,
+        favorite: false,
+        tags: [],
+        history: [],
+        jitterMs: null,
+        lossPercent: 0,
       },
       ...mockServers,
     ];
@@ -549,6 +583,26 @@ export async function refreshRoutingGeoIfDue(): Promise<GeoStatus | null> {
 export async function listProfiles(): Promise<Profile[]> {
   if (!isTauri) return [...mockProfiles];
   return invoke<Profile[]>("list_profiles");
+}
+
+export async function setServerFavorite(serverId: string, favorite: boolean): Promise<void> {
+  if (!isTauri) {
+    mockServers = mockServers.map((server) =>
+      server.id === serverId ? { ...server, favorite } : server,
+    );
+    return;
+  }
+  await invoke("set_server_favorite", { serverId, favorite });
+}
+
+export async function setServerTags(serverId: string, tags: string[]): Promise<void> {
+  if (!isTauri) {
+    mockServers = mockServers.map((server) =>
+      server.id === serverId ? { ...server, tags } : server,
+    );
+    return;
+  }
+  await invoke("set_server_tags", { serverId, tags });
 }
 
 export async function listServers(profileId?: string): Promise<Server[]> {

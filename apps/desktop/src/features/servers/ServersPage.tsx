@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
@@ -9,13 +9,14 @@ import { useAppStore, useT } from "../../store/useAppStore";
 import type { Server } from "../../lib/tauri";
 import type { Page } from "../../components/NavRail";
 import { ServerLatency, type PingDisplay } from "./ServerLatency";
+import { PingHistory } from "./PingHistory";
 
 interface ServersPageProps {
   onNavigate: (page: Page) => void;
 }
 
 type SortMode = "group" | "ping" | "name";
-type ServerFilter = "all" | "active" | "excluded";
+type ServerFilter = "all" | "active" | "excluded" | "favorites";
 
 export function ServersPage({ onNavigate }: ServersPageProps) {
   const t = useT();
@@ -32,6 +33,8 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
   const probeAll = useAppStore((state) => state.probeAll);
   const setServerExcluded = useAppStore((state) => state.setServerExcluded);
   const setServersExcluded = useAppStore((state) => state.setServersExcluded);
+  const setServerFavorite = useAppStore((state) => state.setServerFavorite);
+  const setServerTags = useAppStore((state) => state.setServerTags);
   const probing = useAppStore((state) => state.probing);
   const busy = useAppStore((state) => state.busy);
   const settings = useAppStore((state) => state.settings);
@@ -39,6 +42,9 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
   const [filter, setFilter] = useState<ServerFilter>("all");
   const [bulk, setBulk] = useState(false);
   const [bulkSelection, setBulkSelection] = useState<Set<string>>(new Set());
+  const [tagServer, setTagServer] = useState<Server | null>(null);
+  const [tagValue, setTagValue] = useState("");
+  const tagRef = useRef<HTMLDialogElement>(null);
   const configuredSort = settings["servers.sort"];
   const sortMode: SortMode =
     configuredSort === "ping" || configuredSort === "name" ? configuredSort : "group";
@@ -47,12 +53,13 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
     const byMode = servers.filter((server) => {
       if (filter === "excluded") return server.excluded;
       if (filter === "active") return !server.excluded;
+      if (filter === "favorites") return server.favorite;
       return true;
     });
     const needle = query.trim().toLowerCase();
     if (!needle) return byMode;
     return byMode.filter((server) =>
-      `${server.name} ${server.host ?? ""} ${server.profileName} ${server.protocol} ${server.engine}`
+      `${server.name} ${server.host ?? ""} ${server.profileName} ${server.protocol} ${server.engine} ${server.tags.join(" ")}`
         .toLowerCase()
         .includes(needle),
     );
@@ -63,6 +70,9 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
     list.sort((left, right) => {
       if (left.excluded !== right.excluded) {
         return left.excluded ? 1 : -1;
+      }
+      if (left.favorite !== right.favorite) {
+        return left.favorite ? -1 : 1;
       }
       if (sortMode === "ping") {
         return (
@@ -98,6 +108,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
         : "servers.sortGroup";
   const pingMode = settings["ping.protocol"] ?? "fast_http";
   const pingDisplay = (settings["ping.display"] ?? "both") as PingDisplay;
+  const favoriteCount = servers.filter((server) => server.favorite).length;
   const pingLabelKey =
     pingMode === "tcp"
       ? "servers.tcpPing"
@@ -133,6 +144,20 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
     }
   };
 
+  const openTags = (server: Server) => {
+    setTagServer(server);
+    setTagValue(server.tags.join(", "));
+    tagRef.current?.showModal();
+  };
+
+  const saveTags = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!tagServer) return;
+    await setServerTags(tagServer.id, tagValue.split(","));
+    tagRef.current?.close();
+    setTagServer(null);
+  };
+
   const renderRow = (server: Server) => {
     const selected = server.id === selectedServerId;
     const connected = connectedServerId === server.id;
@@ -164,13 +189,52 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
               <span className="engine-badge">{server.engine}</span>
               {server.host ? `${server.host}${server.port ? `:${server.port}` : ""}` : t("servers.noHost")}
             </span>
+            {server.tags.length > 0 ? (
+              <span className="server-row__tags">
+                {server.tags.map((tag) => (
+                  <span key={tag} className="tag-chip">{tag}</span>
+                ))}
+              </span>
+            ) : null}
           </span>
         </button>
         {server.excluded ? (
           <span className="pill pill--muted">{t("servers.excluded")}</span>
         ) : (
-          <ServerLatency latency={server.latencyMs} display={pingDisplay} />
+          <span className="server-row__latency">
+            <PingHistory
+              history={server.history}
+              jitterMs={server.jitterMs}
+              lossPercent={server.lossPercent}
+            />
+            <ServerLatency latency={server.latencyMs} display={pingDisplay} />
+          </span>
         )}
+        <button
+          type="button"
+          className={`icon-button${server.favorite ? " is-favorite" : ""}`}
+          title={server.favorite ? t("servers.unfavorite") : t("servers.favorite")}
+          aria-label={server.favorite ? t("servers.unfavorite") : t("servers.favorite")}
+          aria-pressed={server.favorite}
+          onClick={(event) => {
+            event.stopPropagation();
+            void setServerFavorite(server.id, !server.favorite);
+          }}
+        >
+          <Icon name={server.favorite ? "star" : "star_border"} size={18} filled={server.favorite} />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          title={t("servers.editTags")}
+          aria-label={t("servers.editTags")}
+          onClick={(event) => {
+            event.stopPropagation();
+            openTags(server);
+          }}
+        >
+          <Icon name="sell" size={18} />
+        </button>
         <button
           type="button"
           className="icon-button"
@@ -249,6 +313,9 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
             <span className="chip">
               {profiles.length} {t("home.profilesShort")}
             </span>
+            {favoriteCount > 0 ? (
+              <span className="chip"><Icon name="star" size={13} filled /> {favoriteCount}</span>
+            ) : null}
             {excludedCount > 0 ? (
               <span className="chip">{t("servers.excludedCount")}: {excludedCount}</span>
             ) : null}
@@ -272,6 +339,7 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
                 { value: "all", label: t("servers.filterAll") },
                 { value: "active", label: t("servers.filterActive") },
                 { value: "excluded", label: t("servers.filterExcluded") },
+                { value: "favorites", label: t("servers.filterFavorites") },
               ]}
               onChange={(value) => changeFilter(value as ServerFilter)}
             />
@@ -362,7 +430,9 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
                   ? "servers.noExcluded"
                   : filter === "active"
                     ? "servers.noActive"
-                    : "servers.notFound",
+                    : filter === "favorites"
+                      ? "servers.noFavorites"
+                      : "servers.notFound",
             )}
             text={t("servers.notFoundHint")}
             action={
@@ -407,6 +477,43 @@ export function ServersPage({ onNavigate }: ServersPageProps) {
           {renderList(ordered)}
         </Card>
       )}
+
+      <dialog
+        ref={tagRef}
+        className="m3-dialog m3-dialog--form"
+        aria-labelledby="server-tags-title"
+        onCancel={() => {
+          setTagServer(null);
+          tagRef.current?.close();
+        }}
+      >
+        <form onSubmit={saveTags}>
+          <div className="m3-dialog__head">
+            <span className="m3-dialog__icon m3-dialog__icon--accent">
+              <Icon name="sell" size={22} />
+            </span>
+            <div>
+              <h2 id="server-tags-title">{t("servers.editTags")}</h2>
+              <p>{tagServer?.name}</p>
+            </div>
+          </div>
+          <label className="m3-field">
+            <span className="m3-field__label">{t("servers.tagsLabel")}</span>
+            <input
+              className="m3-input"
+              value={tagValue}
+              onChange={(event) => setTagValue(event.target.value)}
+              placeholder="work, home, fast"
+            />
+          </label>
+          <div className="m3-dialog__actions">
+            <Button variant="text" onClick={() => tagRef.current?.close()}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit">{t("common.save")}</Button>
+          </div>
+        </form>
+      </dialog>
     </>
   );
 }
