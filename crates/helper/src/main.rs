@@ -83,6 +83,10 @@ fn main() {
         "stop" => client_command(json!({ "cmd": "stop_tun" })).map(|value| print_json(&value)),
         "panic" => client_command(json!({ "cmd": "panic" })).map(|value| print_json(&value)),
         "start-tun" => client_command(parse_start_args(&args)).map(|value| print_json(&value)),
+        "config" => {
+            print_json(&tun_config(10808, &[]));
+            Ok(())
+        }
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -108,7 +112,7 @@ fn print_json(value: &Value) {
 
 fn print_help() {
     println!(
-        "m3vpn-helper run | status | stop | panic | restore | start-tun --app-pid N --socks-port N [--proxy-pid N ...] [--front-pid N] [--kill-switch]"
+        "m3vpn-helper run | status | stop | panic | restore | config | start-tun --app-pid N --socks-port N [--proxy-pid N ...] [--front-pid N] [--kill-switch]"
     );
 }
 
@@ -658,6 +662,10 @@ fn tun_config(socks_port: u16, dns: &[Value]) -> Value {
                         "::1/128"
                     ],
                     "outbound": "direct"
+                },
+                {
+                    "ip_cidr": ["0.0.0.0/0", "::/0"],
+                    "outbound": "proxy"
                 }
             ],
             "final": "proxy",
@@ -932,6 +940,7 @@ mod tests {
         assert_eq!(config["dns"]["final"], "dns-bootstrap");
         assert_eq!(config["dns"]["servers"][0]["type"], "https");
         assert_eq!(config["route"]["rules"][2]["ip_cidr"][0], "10.0.0.0/8");
+        assert_eq!(config["route"]["rules"][3]["outbound"], "proxy");
     }
 
     #[test]
